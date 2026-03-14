@@ -3,7 +3,7 @@
 ## Documentation Rule
 Whenever architecture or runtime behavior changes:
 - Update architecture.md
-- Update tasks.md
+- Update tasks.md (Mark tasks as complete [x] as they are implemented and verified)
 - Update GEMINI.md
 - Update related task docs
 - Update this file if standards evolve

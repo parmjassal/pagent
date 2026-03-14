@@ -1,10 +1,10 @@
 # Tasks
 
 ## Workspace & Core Runtime
-- [ ] Workspace Root Resolution (Env Var / Home Dir)
-- [ ] Session Context Initialization (Path Hierarchy Setup)
-- [ ] **MailboxProvider Interface** (Filesystem implementation)
-- [ ] **ResourceManager Interface** (Simple copy-based implementation)
+- [x] Workspace Root Resolution (Env Var / Home Dir)
+- [x] Session Context Initialization (Path Hierarchy Setup)
+- [x] **MailboxProvider Interface** (Filesystem implementation)
+- [x] **ResourceManager Interface** (Simple copy-based implementation)
 - [ ] **In-Memory Session Quota:** Integration into the LangGraph state object.
 - [ ] Mailbox Pointer Injection (for LangGraph units)
 - [ ] Session Snapshot Engine
