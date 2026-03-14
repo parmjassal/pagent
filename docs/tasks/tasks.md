@@ -5,7 +5,7 @@
 - [x] Session Context Initialization (Path Hierarchy Setup)
 - [x] **MailboxProvider Interface** (Filesystem implementation)
 - [x] **ResourceManager Interface** (Simple copy-based implementation)
-- [ ] **In-Memory Session Quota:** Integration into the LangGraph state object.
+- [x] **In-Memory Session Quota:** Integration into the LangGraph state object.
 - [ ] Mailbox Pointer Injection (for LangGraph units)
 - [ ] Session Snapshot Engine
 - [ ] Persistent Runtime Loop (Service Mode)
