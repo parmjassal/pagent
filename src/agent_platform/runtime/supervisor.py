@@ -1,7 +1,7 @@
 from typing import List, Dict, Any, Optional
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
-from .state import AgentState
+from .state import AgentState, AgentRole
 from .quota import SessionQuota
 from .agent_factory import AgentFactory
 from .generator import SystemGeneratorAgent, TaskType
@@ -30,12 +30,20 @@ class SupervisorAgent:
         )
 
     def _should_continue(self, state: AgentState) -> str:
-        """Centralized router with Loop Detection."""
-        # 1. Check for infinite loops
-        if LoopMonitor.check_node_loop(state, "decompose") or LoopMonitor.check_content_loop(state):
+        """Centralized router with Role-Aware Loop Detection."""
+        # 1. Determine thresholds based on role
+        # Supervisors have low tolerance for repetition in decomposition
+        node_threshold = 3 if state["role"] == AgentRole.SUPERVISOR else 10
+        
+        # 2. Check for node loops
+        if LoopMonitor.check_node_loop(state, "decompose", threshold=node_threshold):
             return "abort"
             
-        # 2. Check for next steps
+        # 3. Check for content loops (Semantic repetition)
+        if LoopMonitor.check_content_loop(state, window=3):
+            return "abort"
+            
+        # 4. Routing
         if state.get("next_steps"):
             return "generate_prompt"
             
@@ -60,13 +68,16 @@ class SupervisorAgent:
         sub_agent_id = state["next_steps"][0]
         prompt = state.get("generated_output")
 
+        # Create sub-agent (Can be another Supervisor or a Worker)
+        # Note: We can determine role based on generator logic, here default to Worker
         new_agent_state = self.agent_factory.create_agent(
             user_id=state["user_id"],
             session_id=state["session_id"],
             agent_id=sub_agent_id,
             current_quota=state["quota"],
             parent_depth=state["current_depth"],
-            generated_output=prompt
+            generated_output=prompt,
+            role=AgentRole.WORKER # Initial default for spawned agents
         )
 
         if not new_agent_state:
@@ -76,7 +87,8 @@ class SupervisorAgent:
             "id": f"task_{state['agent_id']}",
             "sender": state["agent_id"],
             "system_prompt": prompt,
-            "payload": {"task": "Perform research."}
+            "payload": {"task": "Perform research."},
+            "role": AgentRole.WORKER
         }
         self.mailbox.send(sub_agent_id, task_msg)
 
@@ -87,8 +99,7 @@ class SupervisorAgent:
         }
 
     def abort_node(self, state: AgentState) -> Dict[str, Any]:
-        """Safety node to stop the graph when a loop is detected."""
-        return {"messages": [{"role": "system", "content": "ABORTING: Infinite loop detected in execution."}]}
+        return {"messages": [{"role": "system", "content": f"ABORTING: Loop detected for {state['role']} agent."}]}
 
     def build_graph(self) -> StateGraph:
         workflow = StateGraph(AgentState)
@@ -99,7 +110,6 @@ class SupervisorAgent:
         
         workflow.set_entry_point("decompose")
         
-        # Routing after decomposition
         workflow.add_conditional_edges(
             "decompose", 
             self._should_continue, 

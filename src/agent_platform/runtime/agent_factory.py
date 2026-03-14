@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Dict, Any, Optional
 from .workspace import WorkspaceContext
-from .state import AgentState, create_initial_state
+from .state import AgentState, create_initial_state, AgentRole
 from .quota import SessionQuota
 
 class AgentFactory:
@@ -19,6 +19,7 @@ class AgentFactory:
         current_quota: SessionQuota,
         parent_depth: int = 0,
         generated_output: Optional[str] = None,
+        role: AgentRole = AgentRole.WORKER, # New parameter
         config: Optional[Dict[str, Any]] = None
     ) -> Optional[AgentState]:
         """
@@ -38,9 +39,9 @@ class AgentFactory:
         outbox_path.mkdir(parents=True, exist_ok=True)
 
         # 3. Initialize state
-        # Note: We pass the current max_agents to the new state's quota
         state = create_initial_state(
             agent_id=agent_id,
+            role=role, # Pass role to state
             user_id=user_id,
             session_id=session_id,
             inbox_path=inbox_path,
@@ -50,7 +51,7 @@ class AgentFactory:
             generated_output=generated_output
         )
         
-        # 4. Increment agent count (This will be added to the state via the reducer)
+        # 4. Increment agent count
         state["quota"].agent_count = 1 
         
         return state

@@ -1,7 +1,13 @@
+from enum import Enum
 from typing import TypedDict, Annotated, List, Dict, Any, Optional, Union
 import operator
 from pathlib import Path
 from .quota import QuotaState, SessionQuota
+
+class AgentRole(str, Enum):
+    SUPERVISOR = "supervisor"
+    WORKER = "worker"
+    SYSTEM = "system"
 
 def update_next_steps(left: List[str], right: Union[List[str], None]) -> List[str]:
     if right is None:
@@ -11,7 +17,6 @@ def update_next_steps(left: List[str], right: Union[List[str], None]) -> List[st
     return left + right
 
 def update_counts(left: Dict[str, int], right: Dict[str, int]) -> Dict[str, int]:
-    """Reducer to accumulate node visit counts."""
     new_counts = left.copy()
     for k, v in right.items():
         new_counts[k] = new_counts.get(k, 0) + v
@@ -22,6 +27,7 @@ class AgentState(TypedDict):
     The base state for all agents in the platform.
     """
     agent_id: str
+    role: AgentRole # New: Segregation of agent types
     user_id: str
     session_id: str
     inbox_path: Path
@@ -31,9 +37,8 @@ class AgentState(TypedDict):
     generated_output: Optional[str]
     messages: Annotated[List[Dict[str, Any]], operator.add]
     next_steps: Annotated[List[str], update_next_steps]
-    # Loop Detection Fields
     node_counts: Annotated[Dict[str, int], update_counts]
-    metadata: Annotated[Dict[str, Any], operator.ior] # Merges dicts
+    metadata: Annotated[Dict[str, Any], operator.ior]
 
 def create_initial_state(
     agent_id: str, 
@@ -41,6 +46,7 @@ def create_initial_state(
     session_id: str, 
     inbox_path: Path, 
     outbox_path: Path,
+    role: AgentRole = AgentRole.WORKER, # Default to worker
     current_depth: int = 0,
     max_agents: int = 50,
     generated_output: Optional[str] = None
@@ -48,6 +54,7 @@ def create_initial_state(
     """Helper to initialize a new agent state."""
     return {
         "agent_id": agent_id,
+        "role": role,
         "user_id": user_id,
         "session_id": session_id,
         "inbox_path": inbox_path,
