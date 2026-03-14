@@ -13,7 +13,9 @@ dependencies = [
     "pydantic>=2",
     "structlog",
     "typer",
-    "pytest"
+    "pytest",
+    "numpy",
+    "scipy"
 ]
 
 [tool.ruff]
