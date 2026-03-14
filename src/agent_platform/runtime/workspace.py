@@ -30,5 +30,6 @@ class WorkspaceContext:
         (session_path / "agents").mkdir(parents=True, exist_ok=True)
         (session_path / "skills").mkdir(parents=True, exist_ok=True)
         (session_path / "prompts").mkdir(parents=True, exist_ok=True)
+        (session_path / "knowledge").mkdir(parents=True, exist_ok=True)
         (session_path / "snapshot").mkdir(parents=True, exist_ok=True)
         return session_path

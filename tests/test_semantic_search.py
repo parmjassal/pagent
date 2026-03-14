@@ -20,7 +20,7 @@ def test_index_and_query(tmp_path):
     
     # Banana should rank higher for the query 'banana'
     assert len(results) == 2
-    assert "banana.txt" in results[0]["path"]
+    assert "banana.txt" in results[0]["metadata"]["path"]
     assert results[0]["score"] > results[1]["score"]
 
 def test_persistence(tmp_path):
@@ -35,4 +35,5 @@ def test_persistence(tmp_path):
     # Load from disk
     new_engine = SemanticSearchEngine.load(index_dir)
     assert len(new_engine.documents) == 1
-    assert "test.txt" in list(new_engine.documents.values())[0]
+    doc_metadata = list(new_engine.documents.values())[0]
+    assert "test.txt" in doc_metadata["path"]

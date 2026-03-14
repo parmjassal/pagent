@@ -10,53 +10,63 @@ logger = logging.getLogger(__name__)
 class SemanticSearchEngine:
     """
     Handles indexing and querying of local files using a hybrid 
-    Sparse (SPLADE-like) and LSH approach.
+    Sparse and LSH approach. Supports chunking for big files.
     """
 
-    def __init__(self, index_path: Path):
+    def __init__(self, index_path: Path, chunk_size: int = 100):
         self.index_path = index_path
         self.index_path.mkdir(parents=True, exist_ok=True)
-        self.metadata_file = self.index_path / "metadata.json"
         self.index_file = self.index_path / "index.json"
+        self.chunk_size = chunk_size # Lines per chunk
         
-        # In-memory storage for the skeleton
-        self.documents: Dict[str, str] = {} # doc_id -> content
-        self.vector_index: Dict[str, List[float]] = {} # doc_id -> sparse_vector
+        self.documents: Dict[str, Dict[str, Any]] = {} # doc_id -> metadata
+        self.vector_index: Dict[str, List[float]] = {} # doc_id -> vector
 
     def build_index(self, folder_path: Path, glob_pattern: str = "**/*.*"):
-        """Recursively finds files and builds the semantic index."""
-        logger.info(f"Building semantic index for: {folder_path}")
+        """Recursively finds files and builds the semantic index with chunking."""
+        logger.info(f"Building chunked semantic index for: {folder_path}")
         
         for file_path in folder_path.glob(glob_pattern):
             if file_path.is_file() and not self._should_ignore(file_path):
                 try:
-                    content = file_path.read_text(errors='ignore')
-                    doc_id = hashlib.sha256(str(file_path).encode()).hexdigest()
+                    lines = file_path.read_text(errors='ignore').splitlines()
                     
-                    # 1. Generate SPLADE-like sparse vector (Placeholder)
-                    # In production: vector = splade_model.encode(content)
-                    vector = self._generate_simulated_splade(content)
-                    
-                    self.documents[doc_id] = str(file_path)
-                    self.vector_index[doc_id] = vector
+                    # Create Chunks
+                    for i in range(0, len(lines), self.chunk_size):
+                        chunk_lines = lines[i : i + self.chunk_size]
+                        content = "\n".join(chunk_lines)
+                        
+                        start_line = i + 1
+                        end_line = i + len(chunk_lines)
+                        
+                        # doc_id includes line range to ensure uniqueness per chunk
+                        doc_id = hashlib.sha256(f"{file_path}:{start_line}:{end_line}".encode()).hexdigest()
+                        
+                        vector = self._lexical_expand(content)
+                        
+                        self.documents[doc_id] = {
+                            "path": str(file_path),
+                            "start_line": start_line,
+                            "end_line": end_line
+                        }
+                        self.vector_index[doc_id] = vector
                 except Exception as e:
                     logger.error(f"Failed to index {file_path}: {e}")
         
         self._save_index()
 
     def query(self, query_text: str, top_k: int = 5) -> List[Dict[str, Any]]:
-        """Queries the index and returns ranked results."""
-        # 1. Encode Query (Placeholder)
-        query_vec = self._generate_simulated_splade(query_text)
-        
-        # 2. LSH / Similiarity Search (Placeholder)
-        # For the skeleton, we'll do a simple dot-product on the "sparse" vectors
+        """Queries the index and returns ranked chunks."""
+        query_vec = self._lexical_expand(query_text)
         results = []
         for doc_id, doc_vec in self.vector_index.items():
             score = sum(a * b for a, b in zip(query_vec, doc_vec))
-            results.append({"doc_id": doc_id, "path": self.documents[doc_id], "score": score})
+            results.append({
+                "doc_id": doc_id, 
+                "metadata": self.documents[doc_id], 
+                "score": score
+            })
         
-        # Rank and return
         results.sort(key=lambda x: x["score"], reverse=True)
         return results[:top_k]
 
@@ -64,22 +74,17 @@ class SemanticSearchEngine:
         ignore_list = [".git", "__pycache__", ".venv", ".DS_Store", "node_modules"]
         return any(part in path.parts for part in ignore_list)
 
-    def _generate_simulated_splade(self, text: str) -> List[float]:
-        """Simulates a sparse lexical expansion vector with basic term weighting."""
-        vec = [0.0] * 512 # Increase dimensionality to 512
+    def _lexical_expand(self, text: str) -> List[float]:
+        vec = [0.0] * 512 
         words = text.lower().split()
         for w in words:
-            # Simple length-based weighting to simulate 'importance'
             weight = len(w) * 0.1
             idx = int(hashlib.md5(w.encode()).hexdigest(), 16) % 512
             vec[idx] += weight
         return vec
 
     def _save_index(self):
-        data = {
-            "documents": self.documents,
-            "vectors": self.vector_index
-        }
+        data = {"documents": self.documents, "vectors": self.vector_index}
         with open(self.index_file, "w") as f:
             json.dump(data, f)
 

@@ -27,11 +27,12 @@ class AgentState(TypedDict):
     The base state for all agents in the platform.
     """
     agent_id: str
-    role: AgentRole # New: Segregation of agent types
+    role: AgentRole
     user_id: str
     session_id: str
     inbox_path: Path
     outbox_path: Path
+    knowledge_path: Path # Pointer to session knowledge base
     quota: QuotaState
     current_depth: int
     generated_output: Optional[str]
@@ -46,7 +47,8 @@ def create_initial_state(
     session_id: str, 
     inbox_path: Path, 
     outbox_path: Path,
-    role: AgentRole = AgentRole.WORKER, # Default to worker
+    knowledge_path: Optional[Path] = None, # New
+    role: AgentRole = AgentRole.WORKER,
     current_depth: int = 0,
     max_agents: int = 50,
     generated_output: Optional[str] = None
@@ -59,6 +61,7 @@ def create_initial_state(
         "session_id": session_id,
         "inbox_path": inbox_path,
         "outbox_path": outbox_path,
+        "knowledge_path": knowledge_path or Path("/tmp/knowledge"), # Fallback
         "quota": SessionQuota(max_agents=max_agents),
         "current_depth": current_depth,
         "generated_output": generated_output,
