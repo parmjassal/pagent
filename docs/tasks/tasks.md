@@ -19,7 +19,7 @@
 ## Default System Agents & Guardrails
 - [x] **Supervisor Agent:** Task decomposition and sub-agent spawning.
 - [x] **Generic Code Generator Agent:** (Formerly Prompt Writer) Used for Prompts and Tools.
-- [ ] **Generic Code Validator Agent:** (Formerly Prompt Validator) Used for Prompts and Tools.
+- [x] **Generic Code Validator Agent:** (Formerly Prompt Validator) Used for Prompts and Tools.
 - [x] **Guardrail Policy Generator & Validator:**
     - [x] Implementation with LLM or SMT (simulated).
     - [x] **Context-Aware Policy Cache:** Logic for `(user_id, context, action, history)`.

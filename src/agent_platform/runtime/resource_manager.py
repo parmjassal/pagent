@@ -43,9 +43,15 @@ class SessionInitializer:
         # Copy Global to Session
         self.resource_manager.copy_resources(global_dir / "skills", session_path / "skills")
         self.resource_manager.copy_resources(global_dir / "prompts", session_path / "prompts")
+        
+        # Explicitly copy guidelines if present
+        if (global_dir / "guidelines.md").exists():
+            shutil.copy2(global_dir / "guidelines.md", session_path / "guidelines.md")
 
         # Copy User specific (overriding global if collision)
         self.resource_manager.copy_resources(user_dir / "skills", session_path / "skills")
         self.resource_manager.copy_resources(user_dir / "prompts", session_path / "prompts")
+        if (user_dir / "guidelines.md").exists():
+            shutil.copy2(user_dir / "guidelines.md", session_path / "guidelines.md")
 
         return session_path
