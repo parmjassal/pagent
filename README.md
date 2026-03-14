@@ -55,6 +55,24 @@ python -m agent_platform.cli --session-id <your-session-id>
 
 ---
 
+## 🛠 Proxy & Endpoint Configuration
+
+**pagent** is designed to work in restricted corporate environments and with local LLM proxies.
+
+### Custom API Endpoints
+You can point the platform to a custom OpenAI-compatible API (e.g., Azure, LiteLLM, Ollama):
+```bash
+python -m agent_platform.cli --openai-base-url "https://my-proxy.internal/v1"
+```
+
+### Corporate Proxy & Redirects
+If your corporate proxy intercepts requests (e.g., Captive Portals), the platform will:
+1.  **Detect** the 3xx redirect.
+2.  **Output** the redirect link to the console for you to authenticate or accept terms.
+3.  **Prevent** silent failures by not following redirects automatically.
+
+---
+
 ## 🌟 Example Scenario: Secure Task Delegation
 
 Imagine you are building a **Security Audit Platform**.

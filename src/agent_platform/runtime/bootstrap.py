@@ -9,11 +9,13 @@ from .lifecycle import AgentLifecycleManager
 
 log = structlog.get_logger()
 
-def start_runtime(user_id: str, session_id: Optional[str] = None):
+def start_runtime(
+    user_id: str, 
+    session_id: Optional[str] = None,
+    openai_base_url: Optional[str] = None
+):
     """
     Bootstraps the platform for a specific user and session.
-    - If session_id is None, a new one is created and initialized.
-    - If session_id exists, we resume without re-copying resources (Persistence).
     """
     configure_logging()
     workspace = WorkspaceContext()
@@ -43,6 +45,7 @@ def start_runtime(user_id: str, session_id: Optional[str] = None):
     log.info("runtime_ready", 
              user_id=user_id, 
              session_id=session_id, 
+             openai_url=openai_base_url,
              path=str(session_path))
 
     # 3. Setup Core Orchestration

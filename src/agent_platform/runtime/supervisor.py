@@ -6,6 +6,7 @@ from .quota import SessionQuota
 from .agent_factory import AgentFactory
 from .generator import SystemGeneratorAgent, TaskType
 from .logic import LoopMonitor
+from .http_client import get_platform_http_client
 from ..mailbox import Mailbox
 
 class SupervisorAgent:
@@ -23,10 +24,15 @@ class SupervisorAgent:
         self.agent_factory = agent_factory
         self.mailbox = mailbox
         self.generator = generator
+        
+        # Configure robust HTTP client for redirects
+        http_client = get_platform_http_client()
+        
         self.llm = ChatOpenAI(
             model=model_name,
             openai_api_key=api_key,
-            openai_api_base=base_url
+            openai_api_base=base_url,
+            http_client=http_client
         )
 
     def _should_continue(self, state: AgentState) -> str:
@@ -41,11 +47,10 @@ class SupervisorAgent:
         return END
 
     def task_decomposition_node(self, state: AgentState) -> AgentState:
-        # In a real scenario, LLM decides if sub-task needs a supervisor or a worker
         return {
             "messages": [{"role": "assistant", "content": "Task decomposition: Spawning a sub-supervisor."}],
             "next_steps": ["sub_supervisor_01"],
-            "metadata": {"next_agent_role": AgentRole.SUPERVISOR}, # Signal for the spawning node
+            "metadata": {"next_agent_role": AgentRole.SUPERVISOR},
             "node_counts": {"decompose": 1}
         }
 
@@ -58,11 +63,8 @@ class SupervisorAgent:
 
         sub_agent_id = state["next_steps"][0]
         prompt = state.get("generated_output")
-        
-        # New: Resolve the role for the sub-agent from metadata
         next_role = state.get("metadata", {}).get("next_agent_role", AgentRole.WORKER)
 
-        # 1. Create sub-agent with specific role (allows sub-supervisors)
         new_agent_state = self.agent_factory.create_agent(
             user_id=state["user_id"],
             session_id=state["session_id"],
@@ -76,7 +78,6 @@ class SupervisorAgent:
         if not new_agent_state:
             return {"messages": [{"role": "system", "content": f"Failed to spawn {sub_agent_id}"}]}
         
-        # 2. Handover
         task_msg = {
             "id": f"task_{state['agent_id']}",
             "sender": state["agent_id"],
@@ -101,9 +102,21 @@ class SupervisorAgent:
         workflow.add_node("generate_prompt", self.generate_prompt_node)
         workflow.add_node("spawn", self.spawning_node)
         workflow.add_node("abort", self.abort_node)
+        
         workflow.set_entry_point("decompose")
-        workflow.add_conditional_edges("decompose", self._should_continue, {"generate_prompt": "generate_prompt", "abort": "abort", END: END})
+        
+        workflow.add_conditional_edges(
+            "decompose", 
+            self._should_continue, 
+            {
+                "generate_prompt": "generate_prompt", 
+                "abort": "abort",
+                END: END
+            }
+        )
+        
         workflow.add_edge("generate_prompt", "spawn")
         workflow.add_edge("spawn", END)
         workflow.add_edge("abort", END)
+        
         return workflow.compile()
