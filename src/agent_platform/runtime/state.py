@@ -1,4 +1,4 @@
-from typing import TypedDict, Annotated, List, Dict, Any
+from typing import TypedDict, Annotated, List, Dict, Any, Optional
 import operator
 from pathlib import Path
 from .quota import QuotaState, SessionQuota
@@ -24,6 +24,7 @@ class AgentState(TypedDict):
     outbox_path: Path
     quota: QuotaState
     current_depth: int
+    generated_prompt: Optional[str]
     messages: Annotated[List[Dict[str, Any]], operator.add]
     next_steps: Annotated[List[str], operator.add]
 
@@ -34,7 +35,8 @@ def create_initial_state(
     inbox_path: Path, 
     outbox_path: Path,
     current_depth: int = 0,
-    max_agents: int = 50
+    max_agents: int = 50,
+    generated_prompt: Optional[str] = None
 ) -> AgentState:
     """Helper to initialize a new agent state with default quota values."""
     return {
@@ -45,6 +47,7 @@ def create_initial_state(
         "outbox_path": outbox_path,
         "quota": SessionQuota(max_agents=max_agents),
         "current_depth": current_depth,
+        "generated_prompt": generated_prompt,
         "messages": [],
         "next_steps": []
     }

@@ -18,6 +18,7 @@ class AgentFactory:
         agent_id: str,
         current_quota: SessionQuota,
         parent_depth: int = 0,
+        generated_prompt: Optional[str] = None,
         config: Optional[Dict[str, Any]] = None
     ) -> Optional[AgentState]:
         """
@@ -45,7 +46,8 @@ class AgentFactory:
             inbox_path=inbox_path,
             outbox_path=outbox_path,
             current_depth=parent_depth + 1,
-            max_agents=current_quota.max_agents
+            max_agents=current_quota.max_agents,
+            generated_prompt=generated_prompt
         )
         
         # 4. Increment agent count (This will be added to the state via the reducer)
