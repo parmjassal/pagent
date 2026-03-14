@@ -1,0 +1,19 @@
+[project]
+name = "agent-platform"
+version = "0.1.0"
+description = "LangGraph-based multi-agent runtime with mailbox orchestration"
+requires-python = ">=3.11"
+dependencies = [
+    "langchain",
+    "langgraph",
+    "openai",
+    "fastapi",
+    "uvicorn",
+    "pydantic>=2",
+    "structlog",
+    "typer",
+    "pytest"
+]
+
+[tool.ruff]
+line-length = 100

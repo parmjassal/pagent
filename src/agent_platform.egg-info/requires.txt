@@ -1,0 +1,9 @@
+langchain
+langgraph
+openai
+fastapi
+uvicorn
+pydantic>=2
+structlog
+typer
+pytest

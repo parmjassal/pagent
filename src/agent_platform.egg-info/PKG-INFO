@@ -1,0 +1,14 @@
+Metadata-Version: 2.4
+Name: agent-platform
+Version: 0.1.0
+Summary: LangGraph-based multi-agent runtime with mailbox orchestration
+Requires-Python: >=3.11
+Requires-Dist: langchain
+Requires-Dist: langgraph
+Requires-Dist: openai
+Requires-Dist: fastapi
+Requires-Dist: uvicorn
+Requires-Dist: pydantic>=2
+Requires-Dist: structlog
+Requires-Dist: typer
+Requires-Dist: pytest

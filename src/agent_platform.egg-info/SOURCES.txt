@@ -1,0 +1,14 @@
+pyproject.toml
+src/agent_platform/cli.py
+src/agent_platform/logging_config.py
+src/agent_platform/mailbox.py
+src/agent_platform.egg-info/PKG-INFO
+src/agent_platform.egg-info/SOURCES.txt
+src/agent_platform.egg-info/dependency_links.txt
+src/agent_platform.egg-info/requires.txt
+src/agent_platform.egg-info/top_level.txt
+src/agent_platform/runtime/bootstrap.py
+src/agent_platform/runtime/resource_manager.py
+src/agent_platform/runtime/workspace.py
+tests/test_placeholder.py
+tests/test_runtime.py
