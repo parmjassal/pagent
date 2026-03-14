@@ -15,7 +15,7 @@
 - [ ] Agent Lifecycle Manager (Creation/Cleanup of Agent Pointers)
 
 ## Default System Agents & Guardrails
-- [ ] **Supervisor Agent:** Task decomposition and sub-agent spawning.
+- [x] **Supervisor Agent:** Task decomposition and sub-agent spawning.
 - [ ] **Dynamic Prompt Writer & Validator:** Context-aware instructions.
 - [ ] **Guardrail Policy Generator & Validator:**
     - [ ] Implementation with LLM or SMT.
