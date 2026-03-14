@@ -5,6 +5,7 @@ from .state import AgentState
 from .quota import SessionQuota
 from .agent_factory import AgentFactory
 from .generator import SystemGeneratorAgent, TaskType
+from .logic import LoopMonitor
 from ..mailbox import Mailbox
 
 class SupervisorAgent:
@@ -28,19 +29,28 @@ class SupervisorAgent:
             openai_api_base=base_url
         )
 
-    def _should_spawn_agent(self, state: AgentState) -> str:
+    def _should_continue(self, state: AgentState) -> str:
+        """Centralized router with Loop Detection."""
+        # 1. Check for infinite loops
+        if LoopMonitor.check_node_loop(state, "decompose") or LoopMonitor.check_content_loop(state):
+            return "abort"
+            
+        # 2. Check for next steps
         if state.get("next_steps"):
             return "generate_prompt"
+            
         return END
 
     def task_decomposition_node(self, state: AgentState) -> AgentState:
-        return {
+        update = {
             "messages": [{"role": "assistant", "content": "Task decomposition: Need a research agent."}],
             "next_steps": ["researcher_1"] 
         }
+        # Track node visit
+        update.update(LoopMonitor.get_update("decompose"))
+        return update
 
     def generate_prompt_node(self, state: AgentState) -> Dict[str, Any]:
-        """Wrapper node to call the generic generator for PROMPTS."""
         return self.generator.generate_node(state, task_type=TaskType.PROMPT)
 
     def spawning_node(self, state: AgentState) -> AgentState:
@@ -48,8 +58,6 @@ class SupervisorAgent:
             return state
 
         sub_agent_id = state["next_steps"][0]
-        
-        # Using 'generated_output' from the generic generator
         prompt = state.get("generated_output")
 
         new_agent_state = self.agent_factory.create_agent(
@@ -78,15 +86,32 @@ class SupervisorAgent:
             "next_steps": [] 
         }
 
+    def abort_node(self, state: AgentState) -> Dict[str, Any]:
+        """Safety node to stop the graph when a loop is detected."""
+        return {"messages": [{"role": "system", "content": "ABORTING: Infinite loop detected in execution."}]}
+
     def build_graph(self) -> StateGraph:
         workflow = StateGraph(AgentState)
         workflow.add_node("decompose", self.task_decomposition_node)
         workflow.add_node("generate_prompt", self.generate_prompt_node)
         workflow.add_node("spawn", self.spawning_node)
+        workflow.add_node("abort", self.abort_node)
         
         workflow.set_entry_point("decompose")
-        workflow.add_conditional_edges("decompose", self._should_spawn_agent, {"generate_prompt": "generate_prompt", END: END})
+        
+        # Routing after decomposition
+        workflow.add_conditional_edges(
+            "decompose", 
+            self._should_continue, 
+            {
+                "generate_prompt": "generate_prompt", 
+                "abort": "abort",
+                END: END
+            }
+        )
+        
         workflow.add_edge("generate_prompt", "spawn")
         workflow.add_edge("spawn", END)
+        workflow.add_edge("abort", END)
         
         return workflow.compile()

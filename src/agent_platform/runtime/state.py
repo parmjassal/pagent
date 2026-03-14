@@ -10,6 +10,13 @@ def update_next_steps(left: List[str], right: Union[List[str], None]) -> List[st
         return []
     return left + right
 
+def update_counts(left: Dict[str, int], right: Dict[str, int]) -> Dict[str, int]:
+    """Reducer to accumulate node visit counts."""
+    new_counts = left.copy()
+    for k, v in right.items():
+        new_counts[k] = new_counts.get(k, 0) + v
+    return new_counts
+
 class AgentState(TypedDict):
     """
     The base state for all agents in the platform.
@@ -21,9 +28,12 @@ class AgentState(TypedDict):
     outbox_path: Path
     quota: QuotaState
     current_depth: int
-    generated_output: Optional[str] # General field for Generator output
+    generated_output: Optional[str]
     messages: Annotated[List[Dict[str, Any]], operator.add]
     next_steps: Annotated[List[str], update_next_steps]
+    # Loop Detection Fields
+    node_counts: Annotated[Dict[str, int], update_counts]
+    metadata: Annotated[Dict[str, Any], operator.ior] # Merges dicts
 
 def create_initial_state(
     agent_id: str, 
@@ -35,7 +45,7 @@ def create_initial_state(
     max_agents: int = 50,
     generated_output: Optional[str] = None
 ) -> AgentState:
-    """Helper to initialize a new agent state with default quota values."""
+    """Helper to initialize a new agent state."""
     return {
         "agent_id": agent_id,
         "user_id": user_id,
@@ -46,5 +56,7 @@ def create_initial_state(
         "current_depth": current_depth,
         "generated_output": generated_output,
         "messages": [],
-        "next_steps": []
+        "next_steps": [],
+        "node_counts": {},
+        "metadata": {}
     }
