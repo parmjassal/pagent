@@ -23,5 +23,5 @@
 
 ## Safety & Resource Management
 - [ ] Quota Manager (Global rate limiting across users)
-- [ ] Sandbox Runner (Isolated tool/agent execution)
+- [x] Sandbox Runner (Isolated tool/agent execution)
 - [ ] Multi-tenant Authentication & Authorization
