@@ -27,7 +27,12 @@ Every code revision **must** be verified with `pytest`. A change is not consider
 - New test cases are added to verify the specific revision or bug fix.
 - The project-specific `pytest` command is executed and confirmed successful.
 
-## Critical Reasoning Rules
+### Test Assertion Persistence
+Established integration test assertions (specifically V2 and above) **must never be changed** without explicit justification. If a change is required due to an architectural shift:
+1.  Reason about the change in the conversation.
+2.  Request permission from the user before modifying the test code.
+
+## Code Principles
 To maintain the platform's architectural integrity, the following rules apply to all design and implementation discussions:
 1.  **Strategic Skepticism:** No structural change is implemented without first identifying at least two potential failure modes or bottlenecks.
 2.  **Feasibility Reasoning:** Every request must be reasoned through (e.g., "Why this way?", "What's the alternative?") before being executed.
