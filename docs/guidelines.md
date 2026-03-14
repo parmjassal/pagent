@@ -8,38 +8,29 @@ Whenever architecture or runtime behavior changes:
 - Update related task docs
 - Update this file if standards evolve
 
-## Logging Guidelines
-Use structlog with JSON logs.
-Log entries **must** include:
-- `user_id`
-- `session_id`
-- `agent_id`
-
-## Resource Persistence (The "Copy" Rule)
-Skills, prompts, and configurations **must not** be symlinked between hierarchy levels (`global` -> `user` -> `session`). They **must be copied** to ensure that active sessions are immutable and unaffected by global system upgrades.
-
-## Mailbox Rule
-Agents communicate **only** through mailbox messages. Direct function calls between agent logic are prohibited.
+## Dependency Injection Rule
+Production code **must never** contain hardcoded simulations or placeholders for LLMs, tools, or external services.
+- Always use ABC interfaces for external components (e.g., `KnowledgeManager`, `PolicyGenerator`).
+- System agents must accept an optional `llm` parameter in their constructor to facilitate mock injection in tests.
 
 ## Testing Rule
 Every code revision **must** be verified with `pytest`. A change is not considered complete until:
 - All existing tests pass.
 - New test cases are added to verify the specific revision or bug fix.
-- The project-specific `pytest` command is executed and confirmed successful.
+- Integration tests (V0-V4) are executed and confirmed successful.
 
 ### Test Assertion Persistence
-Established integration test assertions (specifically V2 and above) **must never be changed** without explicit justification. If a change is required due to an architectural shift:
-1.  Reason about the change in the conversation.
-2.  Request permission from the user before modifying the test code.
+Established integration test assertions **must never be changed** without explicit justification. Request user permission before modifying any V-series test code.
+
+## Logging & UI Rule
+- **Rich UI:** Use `rich.tree` and `rich.live` for stdout-based user visualization.
+- **Developer Trace:** Use `stderr` for functional logs.
+- **Persistence:** Every session must maintain a `platform.log` file in its root directory for full traceability.
+
+## Resource Persistence (The "Copy" Rule)
+Resources (skills, prompts, guidelines) **must be copied** (not symlinked) from global to session levels upon initialization to ensure active session immutability.
 
 ## Code Principles
-To maintain the platform's architectural integrity, the following rules apply to all design and implementation discussions:
-1.  **Strategic Skepticism:** No structural change is implemented without first identifying at least two potential failure modes or bottlenecks.
-2.  **Feasibility Reasoning:** Every request must be reasoned through (e.g., "Why this way?", "What's the alternative?") before being executed.
-3.  **Performance Cost Evaluation:** Any feature involving disk I/O, recursion, or LLM-based validation must have an associated performance "cost" evaluation.
-4.  **Consistency Check:** Verify if a new requirement contradicts a previously established mandate in `docs/architecture.md` or `GEMINI.md`.
-
-## Code Principles
-- **Isolation-first:** Prioritize filesystem and resource isolation.
-- **KISS, DRY.**
-- **Service-Ready:** All components must handle `user_id` and `session_id` context.
+- **Isolation-first:** Strictly bounded filesystem and process contexts.
+- **Strategic Skepticism:** No structural change without identifying potential failure modes.
+- **Service-Ready:** All components must handle `user_id` and `session_id`.

@@ -1,53 +1,112 @@
 # Architecture
 
-This platform implements a LangGraph-based multi-agent runtime designed for service-oriented, multi-tenant deployments.
+This document describes the design and implementation of the LangGraph-based multi-agent runtime.
 
-## The Hierarchical Workspace (`.pagent`)
+## Core Tenets
 
-The platform uses a structured filesystem root (defaulting to `~/.pagent` or `AGENT_WORKSPACE_ROOT`) to manage isolation and resource inheritance.
+The platform is built on the following architectural pillars:
 
-```text
-.pagent/
-├── global/                 # System-wide shared resources (skills, prompts)
-├── user_{user_id}/         # User-specific persistent data
-└── user_{user_id}/{session_id}/  # Session-specific execution context
-    ├── snapshot/           # Point-in-time state of the session
-    ├── skills/             # COPIED from global/user for this session
-    ├── prompts/            # COPIED from global/user for this session
-    └── agents/             # The active "Basic Units"
-        └── {agent_id}/
-            ├── inbox/      # Mailbox pointer for LangGraph
-            ├── outbox/     # Mailbox pointer for LangGraph
-            └── state.db    # LangGraph checkpoint (Includes In-Memory Quota)
+1.  **Isolation-first [Y]:** Agents operate in strictly bounded filesystem and process contexts.
+2.  **Immutable Execution Contexts [Y]:** Sessions are hydrated via copying (not symlinking) to ensure global upgrades do not disrupt active work.
+3.  **Service-Oriented Multi-tenancy [Y]:** Native support for `user_id` and `session_id` throughout the stack.
+4.  **Resource-bounded Autonomy [Y]:** Recursive spawning is governed by depth limits, session quotas, and loop detection.
+5.  **State Persistence & Resumability [N]:** The ability to recover graph state from disk after process failure (Pending SQLiteSaver integration).
+
+---
+
+## 1. Hierarchical Workspace (`.pagent`)
+
+The workspace root organizes data to support multi-tenancy, resource inheritance, and **Knowledge Persistence**.
+
+### Directory Structure
+-   `global/`: Shared system-wide prompts, skills, and guidelines.
+-   `user_{user_id}/`: Persistent user profile and configuration.
+-   `user_{user_id}/{session_id}/`: The atomic unit of execution.
+    -   `guidelines.md`: Session-specific safety rules.
+    -   `knowledge/`: **[NEW]** Extracted "Fact Sheets" (Markdown) from large-file analysis.
+    -   `semantic_index/`: **[NEW]** Hybrid Sparse/LSH indices for local file search.
+    -   `platform.log`: **[NEW]** Persistent session-level execution trace.
+    -   `agents/{agent_id}/`: Individual agent sandbox.
+
+---
+
+## 2. Specialized System Agents
+
+The platform coordinates a hierarchy of agents through standardized, dependency-injected interfaces.
+
+### 🤖 Supervisor Agent
+The primary orchestrator. Uses structured LLM output (`DecompositionResult`) to break down tasks and recursively spawn sub-agents (Supervisors or Workers).
+
+### 🤖 Generator Agent
+A generic code/prompt writer. Hydrated with different system prompts to generate either sub-agent instructions (`PROMPT`) or Python code for dynamic tools (`TOOL`).
+
+### 🤖 Validator Agent
+Ensures generated content adheres to `guidelines.md`. Uses structured LLM output (`ValidationResult`) to accept or reject generator output.
+
+### 🤖 Search Agent
+Manages local folder indexing and semantic querying using the `SemanticSearchEngine`. Supports **Chunked Indexing** for large file analysis.
+
+### 🤖 FactSheet Agent
+Extracts granular findings from file chunks into persistent Markdown "Fact Sheets" within the `knowledge/` directory.
+
+---
+
+## 3. Security & Safety Mechanisms
+
+### Dual-Path Tool Dispatching
+-   **Native (COMMUNITY):** Trusted tools run within the main process for performance.
+-   **Sandboxed (DYNAMIC):** AI-written tools run via `ProcessSandboxRunner` with strict timeouts and process-level isolation.
+
+### Role-Aware Loop Detection
+-   **Node Frequency:** Tracks visits to graph nodes via reducers.
+-   **Semantic Repetition:** Detects identical message cycles.
+-   **Thresholds:** Supervisors have strict limits (e.g., 3 retries); Workers have higher limits (e.g., 10).
+
+### Proxy & Connectivity
+-   **Custom Endpoints:** Support for `OPENAI_BASE_URL` for local models or proxies.
+-   **Redirect Detection:** Custom HTTP hook detects corporate captive portals and outputs the location link.
+
+---
+
+## 4. Interaction & Observability
+
+### Rich UI
+The CLI provides a live-updating `rich.tree` visualization of the orchestration hierarchy, showing the "Thinking" state and "Agent Tree" progress in real-time.
+
+### Tiered Logging
+-   **stdout:** Reserved for the Rich UI.
+-   **stderr:** Human-readable functional trace for developers.
+-   **file:** Full session trace persisted to `platform.log` for post-mortem analysis.
+
+---
+
+## 5. Current Gaps & Roadmap
+
+| Feature | Status | Priority |
+| :--- | :--- | :--- |
+| **SQLite Checkpointing** | **N** | **High** - Required for true graph resumability. |
+| **Scheduler/Listener** | **N** | **High** - Automated triggering of Mailbox messages. |
+| **Formal Methods Validator** | **N** | Medium - SMT-based code verification. |
+| **Branching Snapshots** | **N** | Low - Session rewinding and auditing. |
+```mermaid
+sequenceDiagram
+    participant P as Parent Agent
+    participant G as Generator (System)
+    participant V as Validator (System)
+    participant F as Agent Factory
+    participant C as Child Agent
+
+    P->>P: Decompose Task
+    P->>G: Request Prompt/Tool for Child
+    G->>G: Load Session Templates
+    G-->>P: Return Generated Output
+    P->>V: Request Validation
+    V->>V: Load Session guidelines.md
+    V-->>P: is_valid: True/False
+    P->>F: Create Child(agent_id, role, output)
+    F->>F: Check Session Quota & Depth
+    F->>WS: Initialize Child Directories
+    F-->>P: Return Child State
+    P->>Mailbox: Write Task Message to Child Inbox
+    P-->>C: (Handover Complete)
 ```
-
-## Core Architectural Components
-
-1.  **MailboxProvider Interface:**
-    - Communication is abstracted via a `MailboxProvider` interface.
-    - **Current Implementation:** `FilesystemMailboxProvider`.
-
-2.  **ResourceManager Interface:**
-    - Handles the "Copy Rule" for skills and prompts.
-    - **Current Implementation:** `SimpleCopyResourceManager` (shutil-based).
-    - **Future-Proofing:** Abstraction allows for later implementation of Content-Addressable Storage (CAS) or versioned symlinks.
-
-3.  **In-Memory Session Quota:**
-    - Quota tracking (agent count, messages, tokens) is maintained in the **LangGraph State Object**.
-    - This allows all agents in a session to share and update the quota with zero disk I/O latency.
-    - Persistence is handled by the LangGraph checkpointer (`state.db`).
-
-4.  **Context-Aware Policy Caching:**
-    - Guardrail and policy results are cached based on `(user_id, context, action, history)`.
-    - Prevents redundant LLM/SMT calls while maintaining security boundaries.
-
-## Dynamic Agent Orchestration
-
-1.  **Recursive Dynamic Spawning:**
-    - Any agent can spawn sub-agents up to a `max_spawn_depth` (default 5).
-    - Total agents per session are governed by the in-memory **Global Session Quota**.
-
-2.  **Default System Agents:**
-    - **Supervisor:** The primary orchestrator.
-    - **Dynamic Prompt Writer/Validator:** For context-aware instructions.
-    - **Guardrail Policy Generator/Validator:** For safety enforcement.
