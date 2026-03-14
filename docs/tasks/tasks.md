@@ -12,7 +12,7 @@
 
 ## Dynamic Agent Orchestration
 - [x] Recursive Spawning Logic (with `max_spawn_depth` and In-Memory Quota checks)
-- [ ] Agent Lifecycle Manager (Creation/Cleanup of Agent Pointers)
+- [x] Agent Lifecycle Manager (Creation/Cleanup of Agent Pointers)
 
 ## Default System Agents & Guardrails
 - [x] **Supervisor Agent:** Task decomposition and sub-agent spawning.
