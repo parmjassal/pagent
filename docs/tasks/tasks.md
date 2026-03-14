@@ -13,8 +13,8 @@
 ## Dynamic Agent & Tool Orchestration
 - [x] Recursive Spawning Logic (with `max_spawn_depth` and In-Memory Quota checks)
 - [x] Agent Lifecycle Manager (Creation/Cleanup of Agent Pointers)
-- [ ] **Tool Source Registry:** Categorize tools as COMMUNITY or DYNAMIC.
-- [ ] **Tool Execution Dispatcher:** Direct tools to Native or Sandbox based on source.
+- [x] **Tool Source Registry:** Categorize tools as COMMUNITY or DYNAMIC (Persistent metadata).
+- [x] **Tool Execution Dispatcher:** Direct tools to Native or Sandbox based on source.
 
 ## Default System Agents & Guardrails
 - [x] **Supervisor Agent:** Task decomposition and sub-agent spawning.
