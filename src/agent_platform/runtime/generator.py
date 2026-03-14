@@ -12,10 +12,11 @@ class TaskType(str, Enum):
 class SystemGeneratorAgent:
     """
     Generic System Agent responsible for generating context-aware 
-    Code or Prompts based on the specified TaskType.
+    Code or Prompts.
     """
 
-    def __init__(self, llm: ChatOpenAI, workspace: WorkspaceContext):
+    def __init__(self, llm: Optional[Any] = None, workspace: Optional[WorkspaceContext] = None):
+        # Allow injection for testing
         self.llm = llm
         self.workspace = workspace
 
@@ -27,30 +28,23 @@ class SystemGeneratorAgent:
         if state.get("next_steps"):
             target_id = state["next_steps"][0]
         elif state.get("messages"):
-            # Try to infer target from the last 'assistant' message (e.g. 'Successfully spawned researcher_1')
             last_msg = state["messages"][-1]["content"]
             if "spawned " in last_msg:
                 target_id = last_msg.split("spawned ")[1].strip()
 
-        session_dir = self.workspace.get_session_dir(state["user_id"], state["session_id"])
+        # 2. Invoke LLM (Mocked or Real)
+        # In production, we'd pass detailed instructions and session context
+        instruction = f"Generate a {task_type.value} for target: {target_id}"
         
-        # 1. Resolve Instructions based on TaskType
-        instruction_template = "You are a specialized AI assistant."
-        if task_type == TaskType.TOOL:
-            instruction_template = "Write a Python function that performs the requested task. Return ONLY the code."
+        # This will now trigger the injected mock or a real LLM call
+        response = self.llm.invoke([SystemMessage(content=instruction)])
         
-        # 2. Use LLM to generate
-        # In a real scenario, we'd pull templates from session_dir / "prompts" / f"{task_type}_template.txt"
-        
-        # Simulated generation
-        if task_type == TaskType.TOOL:
-            generated = f"def {target_id}_func(x): return f'Result for {{x}}'"
-            log_msg = f"Generator: Created Python tool for {target_id}"
-        else:
-            generated = f"SYSTEM PROMPT for {target_id}: Accomplish the task."
-            log_msg = f"Generator: Created system prompt for {target_id}"
+        # Response might be a BaseMessage (real) or a string (simple mock)
+        content = response.content if hasattr(response, "content") else str(response)
+
+        log_msg = f"Generator: Created {task_type.value} for {target_id}"
 
         return {
             "messages": [{"role": "system", "content": log_msg}],
-            "generated_output": generated # Generic field for the output
+            "generated_output": content
         }

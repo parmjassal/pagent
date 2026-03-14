@@ -1,18 +1,21 @@
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, Union
 import logging
 from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage
 from .state import AgentState
 from .workspace import WorkspaceContext
+from .models import ValidationResult
 
 logger = logging.getLogger(__name__)
 
 class SystemValidatorAgent:
     """
     Generic System Agent responsible for validating generated code or prompts 
-    against session guidelines and guardrail policies.
+    against session guidelines.
     """
 
-    def __init__(self, llm: ChatOpenAI, workspace: WorkspaceContext):
+    def __init__(self, llm: Optional[Any] = None, workspace: Optional[WorkspaceContext] = None):
+        # Injected LLM should be configured with .with_structured_output(ValidationResult)
         self.llm = llm
         self.workspace = workspace
 
@@ -21,42 +24,27 @@ class SystemValidatorAgent:
         
         generated_content = state.get("generated_output")
         if not generated_content:
-            return {"messages": [{"role": "system", "content": "Validator: No content to validate."}], "is_valid": True}
+            return {"messages": [{"role": "system", "content": "Validator: No content."}], "is_valid": True}
 
-        # 1. Extract Guidelines from Session
-        session_path = self.workspace.get_session_dir(state["user_id"], state["session_id"])
-        # Check for both global level and session level overrides
-        guidelines_path = session_path / "guidelines.md"
-        
+        # 1. Resolve Guidelines
         guidelines = "Use professional tone and ensure safety."
-        if guidelines_path.exists():
-            guidelines = guidelines_path.read_text()
-        else:
-            # Fallback to global if session doesn't have it
-            global_guidelines = self.workspace.get_global_dir() / "guidelines.md"
-            if global_guidelines.exists():
-                guidelines = global_guidelines.read_text()
+        if self.workspace:
+            session_path = self.workspace.get_session_dir(state["user_id"], state["session_id"])
+            guidelines_path = session_path / "guidelines.md"
+            if guidelines_path.exists():
+                guidelines = guidelines_path.read_text()
 
-        # 2. Perform Validation (Simulated LLM check)
-        # In a real scenario, this would use a structured output chain to return (is_valid, feedback)
-        is_valid, reason = self._simulate_validation(generated_content, guidelines)
+        # 2. Invoke LLM (Mocked or Real)
+        instruction = f"Validate this content against these guidelines:\n\nContent: {generated_content}\n\nGuidelines: {guidelines}"
+        
+        # This returns a ValidationResult object (or a mock)
+        result: ValidationResult = self.llm.invoke([SystemMessage(content=instruction)])
 
-        log_msg = f"Validator: Result={is_valid}, Reason={reason}"
+        log_msg = f"Validator: is_valid={result.is_valid}, reason='{result.reasoning}'"
         logger.info(log_msg)
 
         return {
             "messages": [{"role": "system", "content": log_msg}],
-            "is_valid": is_valid,
-            "validation_feedback": reason if not is_valid else None
+            "is_valid": result.is_valid,
+            "validation_feedback": result.reasoning if not result.is_valid else None
         }
-
-    def _simulate_validation(self, content: str, guidelines: str) -> Tuple[bool, str]:
-        """Placeholder for actual LLM-based validation against Markdown guidelines."""
-        # Check if 'destructive' or 'Safety' is mentioned in guidelines
-        is_safety_active = "destructive" in guidelines.lower() or "safety" in guidelines.lower()
-        
-        destructive_keywords = ["delete", "remove", "rm ", "drop", "wipe"]
-        if is_safety_active and any(kw in content.lower() for kw in destructive_keywords):
-            return False, "Content violates destructive action policy."
-        
-        return True, "Passed"

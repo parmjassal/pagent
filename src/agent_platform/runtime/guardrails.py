@@ -17,8 +17,13 @@ class PolicyLookupProvider(ABC):
     def store_decision(self, key_data: Dict[str, Any], decision: Tuple[bool, str]):
         pass
 
+class PolicyGenerator(ABC):
+    """Interface for dynamically generating a policy decision (LLM or SMT)."""
+    @abstractmethod
+    def generate(self, tool_name: str, tool_args: Dict[str, Any]) -> Tuple[bool, str]:
+        pass
+
 class StableHashLookupProvider(PolicyLookupProvider):
-    """Traditional hashing lookup (Fragile but fast)."""
     def __init__(self):
         self.cache: Dict[str, Tuple[bool, str]] = {}
 
@@ -31,26 +36,18 @@ class StableHashLookupProvider(PolicyLookupProvider):
     def store_decision(self, key_data: Dict[str, Any], decision: Tuple[bool, str]):
         self.cache[self._hash(key_data)] = decision
 
-class SemanticLookupProvider(PolicyLookupProvider):
-    """
-    Placeholder for LSH or SPLADE-based lookup.
-    Allows for 'fuzzy' matching of actions and contexts.
-    """
-    def get_decision(self, key_data: Dict[str, Any]) -> Optional[Tuple[bool, str]]:
-        # TODO: Implement SPLADE explosion on query path
-        # TODO: Implement LSH for high-dimensional semantic vector search
-        return None 
-
-    def store_decision(self, key_data: Dict[str, Any], decision: Tuple[bool, str]):
-        pass
-
 class GuardrailManager:
     """
-    Handles context-aware policy validation using a pluggable Lookup Provider.
+    Handles context-aware policy validation.
     """
 
-    def __init__(self, lookup_provider: Optional[PolicyLookupProvider] = None):
+    def __init__(
+        self, 
+        lookup_provider: Optional[PolicyLookupProvider] = None,
+        policy_generator: Optional[PolicyGenerator] = None
+    ):
         self.lookup = lookup_provider or StableHashLookupProvider()
+        self.policy_generator = policy_generator
 
     def validate_tool_call(
         self, 
@@ -73,23 +70,22 @@ class GuardrailManager:
             "history": history
         }
 
-        # 1. Check Lookup (Hash or Semantic)
+        # 1. Check Lookup (Cache)
         cached = self.lookup.get_decision(key_data)
         if cached:
             logger.info(f"Guardrail lookup hit for {action}")
             return cached
 
-        # 2. Simulated Policy Check
-        is_allowed, reason = self._simulated_policy_engine(tool_name, tool_args)
+        # 2. Invoke Policy Generator (Injected)
+        if not self.policy_generator:
+            # Fallback if no generator injected (Safety first: block by default if unconfigured)
+            return False, "Guardrail policy generator not configured."
+
+        is_allowed, reason = self.policy_generator.generate(tool_name, tool_args)
 
         # 3. Store Result
         self.lookup.store_decision(key_data, (is_allowed, reason))
         return is_allowed, reason
-
-    def _simulated_policy_engine(self, tool_name: str, tool_args: Dict[str, Any]) -> Tuple[bool, str]:
-        if "delete" in tool_name.lower() or "rm" in tool_name.lower():
-            return False, f"Policy violation: Destructive tool '{tool_name}' is prohibited."
-        return True, "Allowed"
 
 def guardrail_tool_wrapper(manager: GuardrailManager):
     def decorator(func: Callable):

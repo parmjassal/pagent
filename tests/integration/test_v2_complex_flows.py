@@ -1,16 +1,18 @@
 import pytest
 from pathlib import Path
+from unittest.mock import MagicMock
 from agent_platform.runtime.workspace import WorkspaceContext
 from agent_platform.runtime.resource_manager import SimpleCopyResourceManager, SessionInitializer
 from agent_platform.runtime.agent_factory import AgentFactory
 from agent_platform.runtime.quota import SessionQuota, update_quota
-from agent_platform.runtime.state import create_initial_state, update_next_steps
-from agent_platform.runtime.generator import SystemGeneratorAgent, TaskType
+from agent_platform.runtime.state import create_initial_state, update_next_steps, AgentRole
+from agent_platform.runtime.generator import SystemGeneratorAgent
 from agent_platform.runtime.validator import SystemValidatorAgent
 from agent_platform.runtime.supervisor import SupervisorAgent
-from agent_platform.runtime.dispatcher import ToolDispatcher, ToolRegistry, ToolSource
+from agent_platform.runtime.dispatcher import ToolDispatcher, ToolRegistry
 from agent_platform.runtime.guardrails import GuardrailManager
 from agent_platform.runtime.sandbox import ProcessSandboxRunner
+from agent_platform.runtime.models import ValidationResult, DecompositionResult, SubAgentTask
 from agent_platform.mailbox import Mailbox, FilesystemMailboxProvider
 
 @pytest.fixture
@@ -27,42 +29,62 @@ def v2_env(tmp_path):
     user_id, session_id = "v2_user", "sess_v2"
     session_path = initializer.initialize(user_id, session_id)
 
-    factory = AgentFactory(workspace, max_spawn_depth=5)
-    provider = FilesystemMailboxProvider(session_path)
-    mailbox = Mailbox(provider)
-    sandbox = ProcessSandboxRunner()
-    guardrails = GuardrailManager()
-    registry = ToolRegistry(session_path)
-    dispatcher = ToolDispatcher(registry, sandbox, guardrails)
+    factory = AgentFactory(workspace)
+    mailbox = Mailbox(FilesystemMailboxProvider(session_path))
     
-    generator = SystemGeneratorAgent(llm=None, workspace=workspace)
-    validator = SystemValidatorAgent(llm=None, workspace=workspace)
-    supervisor = SupervisorAgent(factory, mailbox, generator, api_key="dummy")
+    # SETUP MOCKS
+    mock_sup_llm = MagicMock()
+    mock_sup_llm.invoke.return_value = DecompositionResult(
+        thought_process="Decomposing",
+        sub_tasks=[SubAgentTask(agent_id="sub_agent", role="worker", instructions="Task")]
+    )
+    
+    mock_gen_llm = MagicMock()
+    mock_gen_llm.invoke.return_value.content = "MOCKED OUTPUT"
+    
+    mock_val_llm = MagicMock()
+    mock_val_llm.invoke.return_value = ValidationResult(is_valid=True, reasoning="Passed")
+
+    generator = SystemGeneratorAgent(llm=mock_gen_llm, workspace=workspace)
+    validator = SystemValidatorAgent(llm=mock_val_llm, workspace=workspace)
+    supervisor = SupervisorAgent(factory, mailbox, generator, llm=mock_sup_llm)
 
     return {
         "user_id": user_id, "session_id": session_id, "session_path": session_path,
-        "supervisor": supervisor, "validator": validator, "mailbox": mailbox
+        "supervisor": supervisor, "validator": validator, "mailbox": mailbox,
+        "mock_val_llm": mock_val_llm, "mock_sup_llm": mock_sup_llm
     }
 
 def test_v2_recursive_depth_and_handover(v2_env):
     env = v2_env
     supervisor = env["supervisor"]
     
+    # Mock specific return for this test
+    env["mock_sup_llm"].invoke.return_value = DecompositionResult(
+        thought_process="Spawning L1",
+        sub_tasks=[SubAgentTask(agent_id="agent_l1", role="worker", instructions="Task")]
+    )
+
     state = create_initial_state("super", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"))
-    state["next_steps"] = ["agent_l1"]
     
     # 1. Spawn L1
-    res1 = supervisor.spawning_node(state)
-    state["quota"] = update_quota(state["quota"], res1["quota"])
-    state["messages"] += res1["messages"]
+    res1 = supervisor.task_decomposition_node(state)
+    state.update(res1)
+    res_spawn1 = supervisor.spawning_node(state)
+    state["quota"] = update_quota(state["quota"], res_spawn1["quota"])
     
     # 2. Spawn L2 from L1
+    env["mock_sup_llm"].invoke.return_value = DecompositionResult(
+        thought_process="Spawning L2",
+        sub_tasks=[SubAgentTask(agent_id="agent_l2", role="worker", instructions="Task")]
+    )
     state["agent_id"] = "agent_l1"
     state["current_depth"] = 1
-    state["next_steps"] = ["agent_l2"]
     
-    res2 = supervisor.spawning_node(state)
-    state["quota"] = update_quota(state["quota"], res2["quota"])
+    res2 = supervisor.task_decomposition_node(state)
+    state.update(res2)
+    res_spawn2 = supervisor.spawning_node(state)
+    state["quota"] = update_quota(state["quota"], res_spawn2["quota"])
     
     assert state["quota"].agent_count == 2
     msg = env["mailbox"].receive("agent_l2")
@@ -73,10 +95,14 @@ def test_v2_validation_positive_negative(v2_env):
     validator = env["validator"]
     state = create_initial_state("a1", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"))
 
-    state["generated_output"] = "def safe(): return 1"
+    # POSITIVE
+    state["generated_output"] = "safe code"
+    env["mock_val_llm"].invoke.return_value = ValidationResult(is_valid=True, reasoning="Safe")
     assert validator.validate_node(state)["is_valid"] is True
 
-    state["generated_output"] = "def unsafe(): import os; os.remove('x')"
+    # NEGATIVE
+    state["generated_output"] = "destructive code"
+    env["mock_val_llm"].invoke.return_value = ValidationResult(is_valid=False, reasoning="Violation")
     assert validator.validate_node(state)["is_valid"] is False
 
 def test_v2_session_quota_enforcement(v2_env):
@@ -86,17 +112,17 @@ def test_v2_session_quota_enforcement(v2_env):
     state = create_initial_state("super", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"))
     state["quota"].max_agents = 2
     
-    # Spawn 1
+    # 1
     state["next_steps"] = ["s1"]
     res1 = supervisor.spawning_node(state)
-    state["quota"] = update_quota(state["quota"], res1.get("quota", SessionQuota(agent_count=0)))
+    state["quota"] = update_quota(state["quota"], res1["quota"])
     
-    # Spawn 2
+    # 2
     state["next_steps"] = ["s2"]
     res2 = supervisor.spawning_node(state)
-    state["quota"] = update_quota(state["quota"], res2.get("quota", SessionQuota(agent_count=0)))
+    state["quota"] = update_quota(state["quota"], res2["quota"])
     
-    # Spawn 3 (Fail)
+    # 3 (Fail)
     state["next_steps"] = ["s3"]
     res3 = supervisor.spawning_node(state)
     assert "Failed to spawn s3" in res3["messages"][0]["content"]
