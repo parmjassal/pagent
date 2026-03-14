@@ -31,32 +31,23 @@ class SupervisorAgent:
 
     def _should_continue(self, state: AgentState) -> str:
         """Centralized router with Role-Aware Loop Detection."""
-        # 1. Determine thresholds based on role
-        # Supervisors have low tolerance for repetition in decomposition
         node_threshold = 3 if state["role"] == AgentRole.SUPERVISOR else 10
-        
-        # 2. Check for node loops
         if LoopMonitor.check_node_loop(state, "decompose", threshold=node_threshold):
             return "abort"
-            
-        # 3. Check for content loops (Semantic repetition)
         if LoopMonitor.check_content_loop(state, window=3):
             return "abort"
-            
-        # 4. Routing
         if state.get("next_steps"):
             return "generate_prompt"
-            
         return END
 
     def task_decomposition_node(self, state: AgentState) -> AgentState:
-        update = {
-            "messages": [{"role": "assistant", "content": "Task decomposition: Need a research agent."}],
-            "next_steps": ["researcher_1"] 
+        # In a real scenario, LLM decides if sub-task needs a supervisor or a worker
+        return {
+            "messages": [{"role": "assistant", "content": "Task decomposition: Spawning a sub-supervisor."}],
+            "next_steps": ["sub_supervisor_01"],
+            "metadata": {"next_agent_role": AgentRole.SUPERVISOR}, # Signal for the spawning node
+            "node_counts": {"decompose": 1}
         }
-        # Track node visit
-        update.update(LoopMonitor.get_update("decompose"))
-        return update
 
     def generate_prompt_node(self, state: AgentState) -> Dict[str, Any]:
         return self.generator.generate_node(state, task_type=TaskType.PROMPT)
@@ -67,9 +58,11 @@ class SupervisorAgent:
 
         sub_agent_id = state["next_steps"][0]
         prompt = state.get("generated_output")
+        
+        # New: Resolve the role for the sub-agent from metadata
+        next_role = state.get("metadata", {}).get("next_agent_role", AgentRole.WORKER)
 
-        # Create sub-agent (Can be another Supervisor or a Worker)
-        # Note: We can determine role based on generator logic, here default to Worker
+        # 1. Create sub-agent with specific role (allows sub-supervisors)
         new_agent_state = self.agent_factory.create_agent(
             user_id=state["user_id"],
             session_id=state["session_id"],
@@ -77,24 +70,25 @@ class SupervisorAgent:
             current_quota=state["quota"],
             parent_depth=state["current_depth"],
             generated_output=prompt,
-            role=AgentRole.WORKER # Initial default for spawned agents
+            role=next_role 
         )
 
         if not new_agent_state:
             return {"messages": [{"role": "system", "content": f"Failed to spawn {sub_agent_id}"}]}
         
+        # 2. Handover
         task_msg = {
             "id": f"task_{state['agent_id']}",
             "sender": state["agent_id"],
             "system_prompt": prompt,
-            "payload": {"task": "Perform research."},
-            "role": AgentRole.WORKER
+            "payload": {"task": "Oversee the sub-tasks."},
+            "role": next_role
         }
         self.mailbox.send(sub_agent_id, task_msg)
 
         return {
             "quota": SessionQuota(agent_count=1),
-            "messages": [{"role": "system", "content": f"Successfully spawned {sub_agent_id}"}],
+            "messages": [{"role": "system", "content": f"Successfully spawned {next_role.value}: {sub_agent_id}"}],
             "next_steps": [] 
         }
 
@@ -107,21 +101,9 @@ class SupervisorAgent:
         workflow.add_node("generate_prompt", self.generate_prompt_node)
         workflow.add_node("spawn", self.spawning_node)
         workflow.add_node("abort", self.abort_node)
-        
         workflow.set_entry_point("decompose")
-        
-        workflow.add_conditional_edges(
-            "decompose", 
-            self._should_continue, 
-            {
-                "generate_prompt": "generate_prompt", 
-                "abort": "abort",
-                END: END
-            }
-        )
-        
+        workflow.add_conditional_edges("decompose", self._should_continue, {"generate_prompt": "generate_prompt", "abort": "abort", END: END})
         workflow.add_edge("generate_prompt", "spawn")
         workflow.add_edge("spawn", END)
         workflow.add_edge("abort", END)
-        
         return workflow.compile()
