@@ -1,8 +1,8 @@
 from pathlib import Path
 from typing import Dict, Any, Optional
 from .workspace import WorkspaceContext
-from .state import AgentState, create_initial_state, AgentRole
-from .quota import SessionQuota
+from ..orch.state import AgentState, create_initial_state, AgentRole
+from ..orch.quota import SessionQuota
 
 class AgentFactory:
     """Handles the creation of new agents and their filesystem context."""
@@ -19,7 +19,7 @@ class AgentFactory:
         current_quota: SessionQuota,
         parent_depth: int = 0,
         generated_output: Optional[str] = None,
-        role: AgentRole = AgentRole.WORKER, # New parameter
+        role: AgentRole = AgentRole.WORKER, 
         config: Optional[Dict[str, Any]] = None
     ) -> Optional[AgentState]:
         """
@@ -33,6 +33,7 @@ class AgentFactory:
         agent_dir = self.workspace.get_agent_dir(user_id, session_id, agent_id)
         inbox_path = agent_dir / "inbox"
         outbox_path = agent_dir / "outbox"
+        knowledge_path = self.workspace.get_session_dir(user_id, session_id) / "knowledge"
 
         # 2. Ensure directories exist
         inbox_path.mkdir(parents=True, exist_ok=True)
@@ -41,11 +42,12 @@ class AgentFactory:
         # 3. Initialize state
         state = create_initial_state(
             agent_id=agent_id,
-            role=role, # Pass role to state
+            role=role, 
             user_id=user_id,
             session_id=session_id,
             inbox_path=inbox_path,
             outbox_path=outbox_path,
+            knowledge_path=knowledge_path,
             current_depth=parent_depth + 1,
             max_agents=current_quota.max_agents,
             generated_output=generated_output

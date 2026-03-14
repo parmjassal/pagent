@@ -4,8 +4,8 @@ from pathlib import Path
 from typing import Optional, List
 from .workspace import WorkspaceContext
 from .agent_factory import AgentFactory
-from .state import AgentState
-from .quota import SessionQuota
+from ..orch.state import AgentState
+from ..orch.quota import SessionQuota
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ class AgentLifecycleManager:
             shutil.rmtree(agent_dir)
 
     def archive_agent(self, user_id: str, session_id: str, agent_id: str):
-        """Moves agent data to an archive directory within the session for post-mortem analysis."""
+        """Moves agent data to an archive directory within the session."""
         session_dir = self.workspace.get_session_dir(user_id, session_id)
         archive_root = session_dir / "archive" / "agents" / agent_id
         archive_root.mkdir(parents=True, exist_ok=True)
@@ -53,10 +53,8 @@ class AgentLifecycleManager:
         agent_dir = self.workspace.get_agent_dir(user_id, session_id, agent_id)
         if agent_dir.exists():
             logger.info(f"Archiving agent {agent_id} to {archive_root}")
-            # Move contents to archive
             for item in agent_dir.iterdir():
                 shutil.move(str(item), str(archive_root / item.name))
-            # Remove the empty agent dir
             agent_dir.rmdir()
 
     def list_active_agents(self, user_id: str, session_id: str) -> List[str]:

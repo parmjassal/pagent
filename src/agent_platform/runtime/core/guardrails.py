@@ -3,7 +3,7 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, Callable, Tuple
-from .state import AgentState
+from ..orch.state import AgentState
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,6 @@ class GuardrailManager:
 
         # 2. Invoke Policy Generator (Injected)
         if not self.policy_generator:
-            # Fallback if no generator injected (Safety first: block by default if unconfigured)
             return False, "Guardrail policy generator not configured."
 
         is_allowed, reason = self.policy_generator.generate(tool_name, tool_args)

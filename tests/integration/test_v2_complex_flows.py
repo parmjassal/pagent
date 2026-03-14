@@ -1,19 +1,19 @@
 import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
-from agent_platform.runtime.workspace import WorkspaceContext
-from agent_platform.runtime.resource_manager import SimpleCopyResourceManager, SessionInitializer
-from agent_platform.runtime.agent_factory import AgentFactory
-from agent_platform.runtime.quota import SessionQuota, update_quota
-from agent_platform.runtime.state import create_initial_state, update_next_steps, AgentRole
-from agent_platform.runtime.generator import SystemGeneratorAgent
-from agent_platform.runtime.validator import SystemValidatorAgent
-from agent_platform.runtime.supervisor import SupervisorAgent
-from agent_platform.runtime.dispatcher import ToolDispatcher, ToolRegistry
-from agent_platform.runtime.guardrails import GuardrailManager
-from agent_platform.runtime.sandbox import ProcessSandboxRunner
-from agent_platform.runtime.models import ValidationResult, DecompositionResult, SubAgentTask
-from agent_platform.mailbox import Mailbox, FilesystemMailboxProvider
+from agent_platform.runtime.core.workspace import WorkspaceContext
+from agent_platform.runtime.core.resource_manager import SimpleCopyResourceManager, SessionInitializer
+from agent_platform.runtime.core.agent_factory import AgentFactory
+from agent_platform.runtime.orch.quota import SessionQuota, update_quota
+from agent_platform.runtime.orch.state import create_initial_state, update_next_steps, AgentRole
+from agent_platform.runtime.agents.generator import SystemGeneratorAgent
+from agent_platform.runtime.agents.validator import SystemValidatorAgent
+from agent_platform.runtime.agents.supervisor import SupervisorAgent
+from agent_platform.runtime.core.dispatcher import ToolDispatcher, ToolRegistry
+from agent_platform.runtime.core.guardrails import GuardrailManager
+from agent_platform.runtime.core.sandbox import ProcessSandboxRunner
+from agent_platform.runtime.orch.models import ValidationResult, DecompositionResult, SubAgentTask
+from agent_platform.runtime.core.mailbox import Mailbox, FilesystemMailboxProvider
 
 @pytest.fixture
 def v2_env(tmp_path):
@@ -59,7 +59,6 @@ def test_v2_recursive_depth_and_handover(v2_env):
     env = v2_env
     supervisor = env["supervisor"]
     
-    # Mock specific return for this test
     env["mock_sup_llm"].invoke.return_value = DecompositionResult(
         thought_process="Spawning L1",
         sub_tasks=[SubAgentTask(agent_id="agent_l1", role="worker", instructions="Task")]

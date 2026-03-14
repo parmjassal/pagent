@@ -1,13 +1,13 @@
 import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
-from agent_platform.runtime.state import create_initial_state, AgentRole
-from agent_platform.runtime.quota import update_quota
-from agent_platform.runtime.supervisor import SupervisorAgent
-from agent_platform.runtime.agent_factory import AgentFactory
-from agent_platform.runtime.workspace import WorkspaceContext
-from agent_platform.runtime.models import DecompositionResult, SubAgentTask
-from agent_platform.mailbox import Mailbox, FilesystemMailboxProvider
+from agent_platform.runtime.orch.state import create_initial_state, AgentRole
+from agent_platform.runtime.orch.quota import update_quota
+from agent_platform.runtime.agents.supervisor import SupervisorAgent
+from agent_platform.runtime.core.agent_factory import AgentFactory
+from agent_platform.runtime.core.workspace import WorkspaceContext
+from agent_platform.runtime.orch.models import DecompositionResult, SubAgentTask
+from agent_platform.runtime.core.mailbox import Mailbox, FilesystemMailboxProvider
 
 @pytest.fixture
 def v3_env(tmp_path):
@@ -15,7 +15,6 @@ def v3_env(tmp_path):
     factory = AgentFactory(workspace)
     mailbox = Mailbox(FilesystemMailboxProvider(tmp_path / "sess"))
     
-    # MOCK LLM
     mock_llm = MagicMock()
     mock_llm.invoke.return_value = DecompositionResult(
         thought_process="Spawning sub-super",
@@ -31,16 +30,13 @@ def test_sub_supervisor_spawning_flow(v3_env):
     
     state = create_initial_state("top_super", "u1", "s1", Path("/tmp"), Path("/tmp"), role=AgentRole.SUPERVISOR)
     
-    # Decompose into Sub-Supervisor
     decomp_res = supervisor.task_decomposition_node(state)
     state.update(decomp_res)
     
     assert state["metadata"]["next_agent_role"] == AgentRole.SUPERVISOR
     
-    # Spawn the Sub-Supervisor
     spawn_res = supervisor.spawning_node(state)
     assert "Successfully spawned supervisor" in spawn_res["messages"][-1]["content"]
     
-    # Verify Mailbox Role
     msg = env["mailbox"].receive("sub_supervisor_01")
     assert msg["role"] == AgentRole.SUPERVISOR

@@ -6,9 +6,12 @@ Requires-Python: >=3.11
 Requires-Dist: langchain
 Requires-Dist: langgraph
 Requires-Dist: openai
+Requires-Dist: langchain-openai
 Requires-Dist: fastapi
 Requires-Dist: uvicorn
 Requires-Dist: pydantic>=2
 Requires-Dist: structlog
 Requires-Dist: typer
 Requires-Dist: pytest
+Requires-Dist: numpy
+Requires-Dist: scipy

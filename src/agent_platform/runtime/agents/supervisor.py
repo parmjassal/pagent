@@ -2,14 +2,14 @@ from typing import List, Dict, Any, Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage
 from langgraph.graph import StateGraph, END
-from .state import AgentState, AgentRole
-from .quota import SessionQuota
-from .agent_factory import AgentFactory
+from ..orch.state import AgentState, AgentRole
+from ..orch.quota import SessionQuota
+from ..core.agent_factory import AgentFactory
 from .generator import SystemGeneratorAgent, TaskType
-from .logic import LoopMonitor
-from .http_client import get_platform_http_client
-from .models import DecompositionResult
-from ..mailbox import Mailbox
+from ..orch.logic import LoopMonitor
+from ..core.http_client import get_platform_http_client
+from ..orch.models import DecompositionResult
+from ..core.mailbox import Mailbox
 
 class SupervisorAgent:
     """The primary orchestrator that decomposes tasks and spawns sub-agents."""
@@ -22,7 +22,7 @@ class SupervisorAgent:
         model_name: str = "gpt-4o", 
         api_key: Optional[str] = None, 
         base_url: Optional[str] = None,
-        llm: Optional[Any] = None # New: Allow injection for testing
+        llm: Optional[Any] = None
     ):
         self.agent_factory = agent_factory
         self.mailbox = mailbox
@@ -40,6 +40,7 @@ class SupervisorAgent:
             ).with_structured_output(DecompositionResult)
 
     def _should_continue(self, state: AgentState) -> str:
+        """Centralized router with Role-Aware Loop Detection."""
         node_threshold = 3 if state["role"] == AgentRole.SUPERVISOR else 10
         if LoopMonitor.check_node_loop(state, "decompose", threshold=node_threshold):
             return "abort"
@@ -51,18 +52,12 @@ class SupervisorAgent:
 
     def task_decomposition_node(self, state: AgentState) -> AgentState:
         """Invokes the LLM to decompose the task into sub-agents."""
-        # Note: In a real system, we'd include system guidelines here
         prompt = [
             SystemMessage(content="You are a task decomposition supervisor. Analyze the user request and identify sub-agents to spawn."),
             *state["messages"]
         ]
-        
-        # This will now use the structured output model
         result: DecompositionResult = self.llm.invoke(prompt)
-        
         next_steps = [task.agent_id for task in result.sub_tasks]
-        
-        # Prepare metadata for the next agent role (taking the first one)
         next_role = result.sub_tasks[0].role if result.sub_tasks else AgentRole.WORKER
         instructions = result.sub_tasks[0].instructions if result.sub_tasks else ""
 

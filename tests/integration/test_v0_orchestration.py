@@ -1,14 +1,14 @@
 import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
-from agent_platform.runtime.workspace import WorkspaceContext
-from agent_platform.runtime.resource_manager import SimpleCopyResourceManager, SessionInitializer
-from agent_platform.runtime.agent_factory import AgentFactory
-from agent_platform.runtime.state import create_initial_state
-from agent_platform.runtime.generator import SystemGeneratorAgent
-from agent_platform.runtime.supervisor import SupervisorAgent
-from agent_platform.runtime.models import DecompositionResult, SubAgentTask
-from agent_platform.mailbox import Mailbox, FilesystemMailboxProvider
+from agent_platform.runtime.core.workspace import WorkspaceContext
+from agent_platform.runtime.core.resource_manager import SimpleCopyResourceManager, SessionInitializer
+from agent_platform.runtime.core.agent_factory import AgentFactory
+from agent_platform.runtime.orch.state import create_initial_state
+from agent_platform.runtime.agents.generator import SystemGeneratorAgent
+from agent_platform.runtime.agents.supervisor import SupervisorAgent
+from agent_platform.runtime.orch.models import DecompositionResult, SubAgentTask
+from agent_platform.runtime.core.mailbox import Mailbox, FilesystemMailboxProvider
 
 @pytest.fixture
 def integ_env(tmp_path):
@@ -24,7 +24,6 @@ def integ_env(tmp_path):
     factory = AgentFactory(workspace)
     mailbox = Mailbox(FilesystemMailboxProvider(session_path))
     
-    # SETUP MOCKS
     mock_sup_llm = MagicMock()
     mock_sup_llm.invoke.return_value = DecompositionResult(
         thought_process="Decomposing...",

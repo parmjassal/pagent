@@ -1,8 +1,8 @@
 import logging
 from typing import Dict, Any, Optional
 from langchain_core.messages import SystemMessage
-from .state import AgentState
-from .knowledge import KnowledgeManager
+from ..orch.state import AgentState
+from ..storage.knowledge import KnowledgeManager
 
 logger = logging.getLogger(__name__)
 
@@ -24,20 +24,13 @@ class FactSheetAgent:
         if not chunk_metadata:
             return {"messages": [{"role": "system", "content": "FactSheetAgent: No chunk provided."}]}
 
-        # 1. Prepare Extraction Prompt
-        # In a real scenario, we'd read the actual file lines using the metadata pointers
         source_ptr = f"{chunk_metadata['path']}#L{chunk_metadata['start_line']}-{chunk_metadata['end_line']}"
         instruction = f"Analyze the following file chunk and extract key facts/logic:\nSource: {source_ptr}"
         
-        # 2. Invoke LLM (Mocked in tests, real in production)
-        # We expect a string or a structured response
         response = self.llm.invoke([SystemMessage(content=instruction)])
         extracted_content = response.content if hasattr(response, "content") else str(response)
 
-        # 3. Resolve Fact Key
         fact_key = f"fact_{chunk_metadata['path'].split('/')[-1]}_{chunk_metadata['start_line']}"
-
-        # 4. Persist Fact
         self.km.store_fact(fact_key, extracted_content, source_ptr)
 
         log_msg = f"FactSheetAgent: Extracted and persisted knowledge for {fact_key}"

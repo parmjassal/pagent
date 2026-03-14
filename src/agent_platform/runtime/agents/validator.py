@@ -2,9 +2,9 @@ from typing import Dict, Any, Optional, Tuple, Union
 import logging
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage
-from .state import AgentState
-from .workspace import WorkspaceContext
-from .models import ValidationResult
+from ..orch.state import AgentState
+from ..core.workspace import WorkspaceContext
+from ..orch.models import ValidationResult
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,6 @@ class SystemValidatorAgent:
     """
 
     def __init__(self, llm: Optional[Any] = None, workspace: Optional[WorkspaceContext] = None):
-        # Injected LLM should be configured with .with_structured_output(ValidationResult)
         self.llm = llm
         self.workspace = workspace
 
@@ -36,8 +35,6 @@ class SystemValidatorAgent:
 
         # 2. Invoke LLM (Mocked or Real)
         instruction = f"Validate this content against these guidelines:\n\nContent: {generated_content}\n\nGuidelines: {guidelines}"
-        
-        # This returns a ValidationResult object (or a mock)
         result: ValidationResult = self.llm.invoke([SystemMessage(content=instruction)])
 
         log_msg = f"Validator: is_valid={result.is_valid}, reason='{result.reasoning}'"

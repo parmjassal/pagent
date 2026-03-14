@@ -2,27 +2,28 @@ import json
 import logging
 from enum import Enum
 from pathlib import Path
+from abc import ABC, abstractmethod
 from typing import Dict, Any, Callable, Optional, List
 from .sandbox import SandboxRunner, SandboxResult
 from .guardrails import GuardrailManager
-from .state import AgentState
+from ..orch.state import AgentState
 
 logger = logging.getLogger(__name__)
 
 class ToolSource(str, Enum):
-    COMMUNITY = "community" # Native execution (LangChain)
-    DYNAMIC = "dynamic"     # Sandboxed execution (System Generator)
+    COMMUNITY = "community" 
+    DYNAMIC = "dynamic"     
 
-def _dynamic_execution_stub(**kwargs):
-    """Module-level helper for Sandbox serialization."""
-    return f"Sandboxed result with {kwargs}"
+class DynamicToolLoader(ABC):
+    """Interface for loading and executing dynamic (AI-written) tool code."""
+    @abstractmethod
+    def get_executable(self, name: str, code_path: Optional[str] = None) -> Callable:
+        pass
 
 class ToolRegistry:
     """
     Manages the lifecycle and metadata of tools within a session.
-    Persists dynamic tool metadata to ensure they are remembered across restarts.
     """
-
     def __init__(self, session_path: Path):
         self.session_path = session_path
         self.registry_file = session_path / "tool_registry.json"
@@ -41,13 +42,10 @@ class ToolRegistry:
         self.registry_file.write_text(json.dumps(self.metadata, indent=2))
 
     def register_native(self, name: str, func: Callable):
-        """Registers a community tool for native execution."""
         self.metadata[name] = {"source": ToolSource.COMMUNITY}
         self.native_funcs[name] = func
-        # We don't necessarily persist native tools as they are re-registered on bootstrap
 
     def register_dynamic(self, name: str, code_path: Optional[Path] = None):
-        """Registers a system-generated tool for sandboxed execution."""
         self.metadata[name] = {
             "source": ToolSource.DYNAMIC,
             "path": str(code_path) if code_path else None
@@ -67,22 +65,21 @@ class ToolDispatcher:
         self, 
         registry: ToolRegistry,
         sandbox: SandboxRunner, 
-        guardrails: GuardrailManager
+        guardrails: GuardrailManager,
+        dynamic_loader: Optional[DynamicToolLoader] = None 
     ):
         self.registry = registry
         self.sandbox = sandbox
         self.guardrails = guardrails
+        self.dynamic_loader = dynamic_loader
 
     def dispatch(self, state: AgentState, tool_name: str, **kwargs) -> Dict[str, Any]:
-        # 1. Guardrail Validation
         is_allowed, reason = self.guardrails.validate_tool_call(state, tool_name, kwargs)
         if not is_allowed:
             return {"error": f"Guardrail blocked: {reason}", "success": False}
 
-        # 2. Identify Source from Registry
         source = self.registry.get_source(tool_name)
 
-        # 3. Execute
         if source == ToolSource.COMMUNITY:
             return self._execute_native(tool_name, **kwargs)
         else:
@@ -91,8 +88,7 @@ class ToolDispatcher:
     def _execute_native(self, tool_name: str, **kwargs) -> Dict[str, Any]:
         func = self.registry.native_funcs.get(tool_name)
         if not func:
-            return {"error": f"Native tool {tool_name} implementation not found", "success": False}
-        
+            return {"error": f"Native tool {tool_name} not found", "success": False}
         try:
             result = func(**kwargs)
             return {"output": result, "success": True, "source": "native"}
@@ -101,8 +97,14 @@ class ToolDispatcher:
 
     def _execute_sandboxed(self, tool_name: str, **kwargs) -> Dict[str, Any]:
         logger.info(f"Dispatching to SANDBOX: {tool_name}")
-        # Placeholder for dynamic code loading from self.registry.metadata[tool_name]['path']
-        result: SandboxResult = self.sandbox.run(_dynamic_execution_stub, **kwargs)
+        
+        if not self.dynamic_loader:
+            return {"error": "Dynamic tool loader not configured", "success": False}
+
+        entry = self.registry.metadata.get(tool_name, {})
+        executable = self.dynamic_loader.get_executable(tool_name, entry.get("path"))
+        
+        result: SandboxResult = self.sandbox.run(executable, **kwargs)
         
         if result.success:
             return {"output": result.output, "success": True, "source": "sandbox"}
