@@ -44,7 +44,7 @@ class SemanticSearchAgent:
         results = engine.query(query_text)
         
         # Format results for the agent history
-        formatted_results = "\n".join([f"- {r['path']} (score: {r['score']:.2f})" for r in results])
+        formatted_results = "\n".join([f"- {r['metadata']['path']} (score: {r['score']:.2f})" for r in results])
         
         return {
             "messages": [{"role": "assistant", "content": f"Semantic Search Results:\n{formatted_results}"}],
