@@ -11,7 +11,7 @@
 - [ ] Persistent Runtime Loop (Service Mode)
 
 ## Dynamic Agent Orchestration
-- [ ] Recursive Spawning Logic (with `max_spawn_depth` and In-Memory Quota checks)
+- [x] Recursive Spawning Logic (with `max_spawn_depth` and In-Memory Quota checks)
 - [ ] Agent Lifecycle Manager (Creation/Cleanup of Agent Pointers)
 
 ## Default System Agents & Guardrails

@@ -7,8 +7,9 @@ from .quota import SessionQuota
 class AgentFactory:
     """Handles the creation of new agents and their filesystem context."""
 
-    def __init__(self, workspace: WorkspaceContext):
+    def __init__(self, workspace: WorkspaceContext, max_spawn_depth: int = 5):
         self.workspace = workspace
+        self.max_spawn_depth = max_spawn_depth
 
     def create_agent(
         self, 
@@ -16,13 +17,14 @@ class AgentFactory:
         session_id: str, 
         agent_id: str,
         current_quota: SessionQuota,
+        parent_depth: int = 0,
         config: Optional[Dict[str, Any]] = None
     ) -> Optional[AgentState]:
         """
         Creates a new agent's directory structure and returns its initial state.
-        Returns None if quota limits are exceeded.
+        Returns None if quota limits or spawn depth limits are exceeded.
         """
-        if not current_quota.can_spawn():
+        if not current_quota.can_spawn() or parent_depth >= self.max_spawn_depth:
             return None
 
         # 1. Resolve paths
@@ -42,6 +44,7 @@ class AgentFactory:
             session_id=session_id,
             inbox_path=inbox_path,
             outbox_path=outbox_path,
+            current_depth=parent_depth + 1,
             max_agents=current_quota.max_agents
         )
         

@@ -23,6 +23,7 @@ class AgentState(TypedDict):
     inbox_path: Path
     outbox_path: Path
     quota: QuotaState
+    current_depth: int
     messages: Annotated[List[Dict[str, Any]], operator.add]
     next_steps: Annotated[List[str], operator.add]
 
@@ -32,6 +33,7 @@ def create_initial_state(
     session_id: str, 
     inbox_path: Path, 
     outbox_path: Path,
+    current_depth: int = 0,
     max_agents: int = 50
 ) -> AgentState:
     """Helper to initialize a new agent state with default quota values."""
@@ -42,6 +44,7 @@ def create_initial_state(
         "inbox_path": inbox_path,
         "outbox_path": outbox_path,
         "quota": SessionQuota(max_agents=max_agents),
+        "current_depth": current_depth,
         "messages": [],
         "next_steps": []
     }
