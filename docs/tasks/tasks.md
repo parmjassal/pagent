@@ -17,9 +17,9 @@
 ## Default System Agents & Guardrails
 - [x] **Supervisor Agent:** Task decomposition and sub-agent spawning.
 - [x] **Dynamic Prompt Writer & Validator:** Context-aware instructions.
-- [ ] **Guardrail Policy Generator & Validator:**
-    - [ ] Implementation with LLM or SMT.
-    - [ ] **Context-Aware Policy Cache:** Logic for `(user_id, context, action, history)`.
+- [x] **Guardrail Policy Generator & Validator:**
+    - [x] Implementation with LLM or SMT (simulated).
+    - [x] **Context-Aware Policy Cache:** Logic for `(user_id, context, action, history)`.
 
 ## Safety & Resource Management
 - [ ] Quota Manager (Global rate limiting across users)
