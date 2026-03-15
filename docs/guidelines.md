@@ -8,27 +8,28 @@ Whenever architecture or runtime behavior changes:
 - Update related task docs
 - Update this file if standards evolve
 
-## Dependency Injection Rule
-Production code **must never** contain hardcoded simulations or placeholders for LLMs, tools, or external services.
-- Always use ABC interfaces for external components (e.g., `KnowledgeManager`, `PolicyGenerator`).
-- System agents must accept an optional `llm` parameter in their constructor to facilitate mock injection in tests.
+## Pre-Implementation Discussion Rule
+For any architectural change, new component, or complex logic update, the agent MUST first provide a technical analysis, reasoning, and risk assessment. Code implementation shall only begin after receiving user confirmation.
 
-## Testing Rule
-Every code revision **must** be verified with `pytest`. A change is not considered complete until:
-- All existing tests pass.
-- New test cases are added to verify the specific revision or bug fix.
-- Integration tests (V0-V4) are executed and confirmed successful.
+## Abstraction & Dependency Injection Rule
+- **No Hardcoding:** Production code (`src/`) must never contain hardcoded mock data or test-specific logic.
+- **Interfaces First:** All external or replaceable components (Storage, LLMs, Tool Loaders) must be defined as ABC (Abstract Base Class) interfaces.
+- **Injected Dependencies:** Implementations must be injected via constructors to facilitate testing and future replacement (e.g., swapping Filesystem for Database).
 
-### Test Assertion Persistence
-Established integration test assertions **must never be changed** without explicit justification. Request user permission before modifying any V-series test code.
+## Lego-Style Integration Rule
+- **Incremental Building:** Build components as independent "blocks" that are immediately integrated and verified.
+- **Mandatory Integration Tests:** Every new feature must be accompanied by an integration test (V-series) that verifies its behavior within the full system stack.
+- **Assertion Persistence:** Established integration test assertions (V2+) must never be changed without explicit reasoning and user permission.
+
+## Hierarchical Scoping & Visibility
+- **Agent Isolation:** Agents operate in private workspaces. 
+- **Read-Only Context:** Hierarchical visibility of `global_context` folders is read-only for sub-agents. 
+- **Supervisor Authority:** Only Supervisor agents have the authority to update the `global_context` via specific tools.
 
 ## Logging & UI Rule
 - **Rich UI:** Use `rich.tree` and `rich.live` for stdout-based user visualization.
 - **Developer Trace:** Use `stderr` for functional logs.
-- **Persistence:** Every session must maintain a `platform.log` file in its root directory for full traceability.
-
-## Resource Persistence (The "Copy" Rule)
-Resources (skills, prompts, guidelines) **must be copied** (not symlinked) from global to session levels upon initialization to ensure active session immutability.
+- **Persistence:** Every session must maintain a `platform.log` file in its root directory.
 
 ## Code Principles
 - **Isolation-first:** Strictly bounded filesystem and process contexts.

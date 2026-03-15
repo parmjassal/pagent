@@ -14,13 +14,13 @@ fi
 
 # 2. Create Virtual Environment
 echo "Creating virtual environment (.venv)..."
-python3.11 -m venv .venv
+python3.11 -m venv .vcli
 
 # 3. Install Dependencies
 echo "Installing dependencies..."
-.venv/bin/pip install --upgrade pip
-.venv/bin/pip install -e .
+.vcli/bin/pip install --upgrade pip
+.vcli/bin/pip install -e .
 
 echo "--- Setup Complete ---"
-echo "To activate the environment, run: source .venv/bin/activate"
+echo "To activate the environment, run: source .vcli/bin/activate"
 echo "To start the platform, run: python -m agent_platform.cli"

@@ -9,7 +9,7 @@
 - [x] Mailbox Pointer Injection (for LangGraph units)
 - [x] **Hierarchical Knowledge Base:** Persistent fact sheets in `knowledge/`.
 - [x] **SQLite Checkpointer:** Real graph state persistence in `state.db`.
-- [ ] **Autonomous Scheduler:** Automated triggering of Mailbox and HITL events.
+- [x] **Autonomous Scheduler:** Automated triggering of Mailbox and HITL events.
 
 ## Prompt Engineering & Tool-Use
 - [x] **Formalize Supervisor Prompts:** Detailed task decomposition logic.
@@ -25,6 +25,16 @@
 - [x] **Tool Execution Dispatcher:** Direct tools to Native or Sandbox based on source.
 - [x] **Agent Role Segregation:** SUPERVISOR vs WORKER logic.
 - [x] **Human-in-the-Loop (HITL):** Persistent approval queue and state-interrupt model.
+
+## Milestone: Recursive Hierarchical Units (Unified Graph)
+- [x] **Agent-Level Workspace Refactor:** Move `todo/`, `inbox/`, and `global_context/` under `agents/{agent_id}/`.
+- [x] **ContextStore Abstraction:** Interface for hierarchical, read-only visibility of `global_context`.
+- [ ] **ResultHook Abstraction:** Interface for payload size checking and automatic file offloading (Summary + File Ref).
+- [ ] **Dynamic Unit Compiler:** Logic to compile a `SupervisorUnit` or `WorkerUnit` graph based on role metadata.
+- [ ] **Wait & Merge Spawn Node:** Implementation of recursive subgraph call sharing `thread_id` with Result-only merging.
+- [ ] **Supervisor Planning Node:** Decision logic for "Decompose vs. Self-Execute."
+- [x] **ScopedFileSystem Tool:** Hierarchical read-only access tool.
+- [x] **ContextUpdate Tool:** Restricted promotion of facts to `global_context`.
 
 ## Default System Agents & Guardrails
 - [x] **Supervisor Agent:** Structured task decomposition and recursive spawning.

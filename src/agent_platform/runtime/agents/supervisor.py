@@ -55,7 +55,7 @@ class SupervisorAgent:
         """Determines the next path based on the chosen strategy."""
         strategy = state.get("metadata", {}).get("strategy")
         
-        node_threshold = 3 if state["role"] == AgentRole.SUPERVISOR else 10
+        node_threshold = 10 # Increased for multi-step reasoning
         if LoopMonitor.check_node_loop(state, "plan", threshold=node_threshold):
             return "abort"
         if LoopMonitor.check_content_loop(state, window=3):
@@ -72,6 +72,8 @@ class SupervisorAgent:
 
     async def planning_node(self, state: AgentState) -> AgentState:
         """Invokes the LLM to decide on an execution strategy."""
+        logger.info(f"Agent {state['agent_id']} entering planning_node. Node counts: {state.get('node_counts')}")
+        
         template_path = state["inbox_path"].parent.parent.parent / "prompts" / "supervisor_decompose.txt"
         system_instruction = "You are a task planning supervisor."
         if template_path.exists():

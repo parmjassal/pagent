@@ -91,16 +91,17 @@ class ToolDispatcher:
         source = self.registry.get_source(tool_name)
 
         if source == ToolSource.COMMUNITY or source == ToolSource.CORE:
-            return self._execute_native(tool_name, **kwargs)
+            return self._execute_native(tool_name, state, **kwargs)
         else:
             return self._execute_sandboxed(tool_name, **kwargs)
 
-    def _execute_native(self, tool_name: str, **kwargs) -> Dict[str, Any]:
+    def _execute_native(self, tool_name: str, state: AgentState, **kwargs) -> Dict[str, Any]:
         func = self.registry.native_funcs.get(tool_name)
         if not func:
             return {"error": f"Native tool {tool_name} not found", "success": False}
         try:
-            result = func(**kwargs)
+            # Inject state into the tool call
+            result = func(state=state, **kwargs)
             return {"output": result, "success": True, "source": "native"}
         except Exception as e:
             return {"error": str(e), "success": False}

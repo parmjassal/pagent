@@ -1,39 +1,121 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
+import logging
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage
+from langchain_core.output_parsers import JsonOutputParser
 from langgraph.graph import StateGraph, END
-from ..orch.state import AgentState
+from ..orch.state import AgentState, AgentRole
 from ..orch.tool_node import AgentToolNode
-from .generator import SystemGeneratorAgent
+from ..orch.models import WorkerResult, ExecutionStrategy
+from ..orch.logic import LoopMonitor
+from ..core.http_client import get_platform_http_client
+
+logger = logging.getLogger(__name__)
 
 class WorkerAgent:
     """
-    Standard Worker agent that executes specialized tasks using tools.
+    Specialized Worker agent that reason about tasks and uses tools to execute.
     """
 
-    def __init__(self, tool_node: AgentToolNode):
+    def __init__(
+        self, 
+        tool_node: AgentToolNode,
+        model_name: str = "gpt-4o",
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        llm: Optional[Any] = None
+    ):
         self.tool_node = tool_node
+        self.parser = JsonOutputParser(pydantic_object=WorkerResult)
+        
+        if llm:
+            self.llm = llm
+        else:
+            http_client = get_platform_http_client()
+            self.base_llm = ChatOpenAI(
+                model=model_name,
+                openai_api_key=api_key,
+                openai_api_base=base_url,
+                http_client=http_client,
+                temperature=0 
+            )
+            self.llm = self.base_llm | self.parser
 
-    def _should_call_tool(self, state: AgentState) -> str:
-        """Logic to decide whether to call a tool or finish."""
-        if state.get("metadata", {}).get("next_tool_call"):
+    def _should_continue(self, state: AgentState) -> str:
+        """Determines the next path based on the strategy."""
+        strategy = state.get("metadata", {}).get("strategy")
+        
+        # Loop Check
+        if LoopMonitor.check_node_loop(state, "reason", threshold=10):
+            return "abort"
+
+        if strategy == ExecutionStrategy.TOOL_USE:
             return "tools"
+        elif strategy == ExecutionStrategy.FINISH:
+            return END
+        
         return END
+
+    async def reasoning_node(self, state: AgentState) -> AgentState:
+        """Invokes the LLM to decide on a tool-use or finish strategy."""
+        
+        # In a real system, we'd load a specific prompt template here
+        system_instruction = "You are a specialized worker agent. Use tools to complete your task."
+        format_instructions = self.parser.get_format_instructions()
+        full_instruction = f"{system_instruction}\n\n{format_instructions}"
+
+        prompt = [
+            SystemMessage(content=full_instruction),
+            *state["messages"]
+        ]
+        
+        raw_result = await self.llm.ainvoke(prompt)
+        result = WorkerResult.model_validate(raw_result)
+        
+        metadata_update = {
+            "strategy": result.strategy,
+            "thought_process": result.thought_process
+        }
+
+        if result.strategy == ExecutionStrategy.TOOL_USE and result.tool_call:
+            metadata_update["next_tool_call"] = result.tool_call.model_dump()
+            return {
+                "role": state["role"],
+                "messages": [{"role": "assistant", "content": result.thought_process}],
+                "metadata": metadata_update,
+                "node_counts": {"reason": 1}
+            }
+
+        return {
+            "role": state["role"],
+            "messages": [{"role": "assistant", "content": result.thought_process}],
+            "final_result": {"content": result.final_answer or "Task finished."},
+            "metadata": metadata_update,
+            "node_counts": {"reason": 1}
+        }
+
+    def abort_node(self, state: AgentState) -> Dict[str, Any]:
+        return {"messages": [{"role": "system", "content": "Worker ABORTING: Loop detected."}]}
 
     def build_graph(self) -> Any:
         workflow = StateGraph(AgentState)
-        
-        # In a real worker, we might have a 'reasoning' node first
-        # But here we show the tool-use integration
+        workflow.add_node("reason", self.reasoning_node)
         workflow.add_node("tools", self.tool_node)
+        workflow.add_node("abort", self.abort_node)
         
-        workflow.set_entry_point("tools") # For this skeleton, it starts with tool call
+        workflow.set_entry_point("reason")
         
         workflow.add_conditional_edges(
-            "tools",
-            self._should_call_tool,
+            "reason",
+            self._should_continue,
             {
                 "tools": "tools",
+                "abort": "abort",
                 END: END
             }
         )
+        
+        workflow.add_edge("tools", "reason") # Loop back after tool execution
+        workflow.add_edge("abort", END)
         
         return workflow.compile()

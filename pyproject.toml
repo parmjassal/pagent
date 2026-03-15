@@ -17,7 +17,9 @@ dependencies = [
     "pytest-asyncio",
     "numpy",
     "scipy",
-    "langgraph-checkpoint-sqlite"
+    "langgraph-checkpoint-sqlite",
+    "aiosqlite",
+    "langchain-community"
 ]
 
 [tool.ruff]

@@ -3,5 +3,5 @@ handlers:
   console:
     class: logging.StreamHandler
 root:
-  level: INFO
+  level: DEBUG
   handlers: [console]
