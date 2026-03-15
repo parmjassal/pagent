@@ -9,7 +9,7 @@ from agent_platform.runtime.orch.quota import update_quota
 from agent_platform.runtime.agents.generator import SystemGeneratorAgent
 from agent_platform.runtime.agents.supervisor import SupervisorAgent
 from agent_platform.runtime.agents.search_agent import SemanticSearchAgent
-from agent_platform.runtime.orch.models import DecompositionResult, SubAgentTask
+from agent_platform.runtime.orch.models import PlanningResult, ExecutionStrategy, SubAgentTask
 from agent_platform.runtime.core.mailbox import Mailbox, FilesystemMailboxProvider
 
 @pytest.fixture
@@ -31,8 +31,9 @@ def repo_env(tmp_path):
     mailbox = Mailbox(FilesystemMailboxProvider(session_path))
     
     mock_llm = AsyncMock()
-    mock_llm.ainvoke.return_value = DecompositionResult(
+    mock_llm.ainvoke.return_value = PlanningResult(
         thought_process="Decomposing for repo analysis.",
+        strategy=ExecutionStrategy.DECOMPOSE,
         sub_tasks=[SubAgentTask(agent_id="analyst_agent", role=AgentRole.WORKER, instructions="Index and query.")]
     )
 
@@ -52,15 +53,16 @@ async def test_v3_repo_analysis_with_mocked_llm(repo_env):
     supervisor = env["supervisor"]
     search_agent = env["search_agent"]
     
-    state = create_initial_state("super_01", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"))
+    state = create_initial_state("super_01", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"), role=AgentRole.SUPERVISOR)
     
-    decomp_state = await supervisor.task_decomposition_node(state)
+    decomp_state = await supervisor.planning_node(state)
     assert "analyst_agent" in decomp_state["next_steps"]
     env["mock_llm"].ainvoke.assert_called_once()
 
     state.update(decomp_state)
-    spawn_res = supervisor.spawning_node(state)
-    assert "Successfully spawned worker: analyst_agent" in spawn_res["messages"][-1]["content"]
+    spawn_res = await supervisor.spawning_node(state)
+    # Corrected assertion based on actual log message
+    assert "Spawned analyst_agent via Mailbox" in spawn_res["messages"][-1]["content"]
 
     analyst_state = create_initial_state("analyst_agent", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"))
     analyst_state["metadata"]["target_folder"] = str(env["repo_path"])

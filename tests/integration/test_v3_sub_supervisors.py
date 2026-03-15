@@ -6,7 +6,7 @@ from agent_platform.runtime.orch.quota import update_quota
 from agent_platform.runtime.agents.supervisor import SupervisorAgent
 from agent_platform.runtime.core.agent_factory import AgentFactory
 from agent_platform.runtime.core.workspace import WorkspaceContext
-from agent_platform.runtime.orch.models import DecompositionResult, SubAgentTask
+from agent_platform.runtime.orch.models import PlanningResult, ExecutionStrategy, SubAgentTask
 from agent_platform.runtime.core.mailbox import Mailbox, FilesystemMailboxProvider
 
 @pytest.fixture
@@ -17,8 +17,9 @@ def v3_env(tmp_path):
     
     # MOCK LLM ASYNC
     mock_llm = AsyncMock()
-    mock_llm.ainvoke.return_value = DecompositionResult(
+    mock_llm.ainvoke.return_value = PlanningResult(
         thought_process="Spawning sub-super",
+        strategy=ExecutionStrategy.DECOMPOSE,
         sub_tasks=[SubAgentTask(agent_id="sub_supervisor_01", role=AgentRole.SUPERVISOR, instructions="Task")]
     )
 
@@ -32,13 +33,14 @@ async def test_sub_supervisor_spawning_flow(v3_env):
     
     state = create_initial_state("top_super", "u1", "s1", Path("/tmp"), Path("/tmp"), role=AgentRole.SUPERVISOR)
     
-    decomp_res = await supervisor.task_decomposition_node(state)
+    decomp_res = await supervisor.planning_node(state)
     state.update(decomp_res)
     
-    assert state["metadata"]["next_agent_role"] == AgentRole.SUPERVISOR
+    assert state["metadata"]["strategy"] == ExecutionStrategy.DECOMPOSE
     
-    spawn_res = supervisor.spawning_node(state)
-    assert "Successfully spawned supervisor" in spawn_res["messages"][-1]["content"]
+    spawn_res = await supervisor.spawning_node(state)
+    assert "Spawned sub_supervisor_01 via Mailbox" in spawn_res["messages"][-1]["content"]
     
+    # Verify Mailbox Role
     msg = env["mailbox"].receive("sub_supervisor_01")
     assert msg["role"] == AgentRole.SUPERVISOR

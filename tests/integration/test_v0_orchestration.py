@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock
 from agent_platform.runtime.core.workspace import WorkspaceContext
 from agent_platform.runtime.core.resource_manager import SimpleCopyResourceManager, SessionInitializer
 from agent_platform.runtime.core.agent_factory import AgentFactory
-from agent_platform.runtime.orch.state import create_initial_state
+from agent_platform.runtime.orch.state import create_initial_state, AgentRole
 from agent_platform.runtime.agents.generator import SystemGeneratorAgent
 from agent_platform.runtime.agents.supervisor import SupervisorAgent
-from agent_platform.runtime.orch.models import DecompositionResult, SubAgentTask
+from agent_platform.runtime.orch.models import PlanningResult, ExecutionStrategy, SubAgentTask
 from agent_platform.runtime.core.mailbox import Mailbox, FilesystemMailboxProvider
 
 @pytest.fixture
@@ -24,12 +24,19 @@ def integ_env(tmp_path):
     factory = AgentFactory(workspace)
     mailbox = Mailbox(FilesystemMailboxProvider(session_path))
     
-    # CORRECT ASYNCMOCK: The agent calls 'self.llm.ainvoke'
     mock_sup_llm = AsyncMock()
-    mock_sup_llm.ainvoke.return_value = DecompositionResult(
-        thought_process="Decomposing...",
-        sub_tasks=[SubAgentTask(agent_id="researcher_1", role="worker", instructions="Task")]
-    )
+    # Mocking the first call to DECOMPOSE and subsequent to FINISH to stop the loop
+    mock_sup_llm.ainvoke.side_effect = [
+        PlanningResult(
+            thought_process="Decomposing...",
+            strategy=ExecutionStrategy.DECOMPOSE,
+            sub_tasks=[SubAgentTask(agent_id="researcher_1", role=AgentRole.WORKER, instructions="Task")]
+        ),
+        PlanningResult(
+            thought_process="Done.",
+            strategy=ExecutionStrategy.FINISH
+        )
+    ]
     mock_gen_llm = AsyncMock()
     mock_gen_llm.ainvoke.return_value.content = "SYSTEM PROMPT"
 
@@ -46,10 +53,11 @@ async def test_v0_orchestration_flow(integ_env):
     env = integ_env
     supervisor = env["supervisor"]
     
-    initial_state = create_initial_state("super", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"))
+    initial_state = create_initial_state("super", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"), role=AgentRole.SUPERVISOR)
     graph = supervisor.build_graph()
     
     final_state = await graph.ainvoke(initial_state)
 
+    # 1 agent spawned in the first iteration
     assert final_state["quota"].agent_count == 1
     assert (env["session_path"] / "agents" / "researcher_1").exists()

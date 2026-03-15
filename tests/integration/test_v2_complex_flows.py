@@ -12,7 +12,7 @@ from agent_platform.runtime.agents.supervisor import SupervisorAgent
 from agent_platform.runtime.core.dispatcher import ToolDispatcher, ToolRegistry
 from agent_platform.runtime.core.guardrails import GuardrailManager
 from agent_platform.runtime.core.sandbox import ProcessSandboxRunner
-from agent_platform.runtime.orch.models import ValidationResult, DecompositionResult, SubAgentTask
+from agent_platform.runtime.orch.models import ValidationResult, PlanningResult, ExecutionStrategy, SubAgentTask
 from agent_platform.runtime.core.mailbox import Mailbox, FilesystemMailboxProvider
 
 @pytest.fixture
@@ -32,7 +32,6 @@ def v2_env(tmp_path):
     factory = AgentFactory(workspace)
     mailbox = Mailbox(FilesystemMailboxProvider(session_path))
     
-    # SETUP ASYNC MOCKS
     mock_sup_llm = AsyncMock()
     mock_gen_llm = AsyncMock()
     mock_val_llm = AsyncMock()
@@ -53,30 +52,32 @@ async def test_v2_recursive_depth_and_handover(v2_env):
     supervisor = env["supervisor"]
     
     # Set mock ainvoke response
-    env["mock_sup_llm"].ainvoke.return_value = DecompositionResult(
+    env["mock_sup_llm"].ainvoke.return_value = PlanningResult(
         thought_process="Spawning L1",
-        sub_tasks=[SubAgentTask(agent_id="agent_l1", role="worker", instructions="Task")]
+        strategy=ExecutionStrategy.DECOMPOSE,
+        sub_tasks=[SubAgentTask(agent_id="agent_l1", role=AgentRole.WORKER, instructions="Task")]
     )
 
-    state = create_initial_state("super", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"))
+    state = create_initial_state("super", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"), role=AgentRole.SUPERVISOR)
     
     # 1. Spawn L1
-    res1 = await supervisor.task_decomposition_node(state)
+    res1 = await supervisor.planning_node(state)
     state.update(res1)
-    res_spawn1 = supervisor.spawning_node(state)
+    res_spawn1 = await supervisor.spawning_node(state)
     state["quota"] = update_quota(state["quota"], res_spawn1["quota"])
     
     # 2. Spawn L2 from L1
-    env["mock_sup_llm"].ainvoke.return_value = DecompositionResult(
+    env["mock_sup_llm"].ainvoke.return_value = PlanningResult(
         thought_process="Spawning L2",
-        sub_tasks=[SubAgentTask(agent_id="agent_l2", role="worker", instructions="Task")]
+        strategy=ExecutionStrategy.DECOMPOSE,
+        sub_tasks=[SubAgentTask(agent_id="agent_l2", role=AgentRole.WORKER, instructions="Task")]
     )
     state["agent_id"] = "agent_l1"
     state["current_depth"] = 1
     
-    res2 = await supervisor.task_decomposition_node(state)
+    res2 = await supervisor.planning_node(state)
     state.update(res2)
-    res_spawn2 = supervisor.spawning_node(state)
+    res_spawn2 = await supervisor.spawning_node(state)
     state["quota"] = update_quota(state["quota"], res_spawn2["quota"])
     
     assert state["quota"].agent_count == 2
@@ -106,20 +107,20 @@ async def test_v2_session_quota_enforcement(v2_env):
     env = v2_env
     supervisor = env["supervisor"]
     
-    state = create_initial_state("super", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"))
+    state = create_initial_state("super", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"), role=AgentRole.SUPERVISOR)
     state["quota"].max_agents = 2
     
     # 1
     state["next_steps"] = ["s1"]
-    res1 = supervisor.spawning_node(state)
+    res1 = await supervisor.spawning_node(state)
     state["quota"] = update_quota(state["quota"], res1["quota"])
     
     # 2
     state["next_steps"] = ["s2"]
-    res2 = supervisor.spawning_node(state)
+    res2 = await supervisor.spawning_node(state)
     state["quota"] = update_quota(state["quota"], res2["quota"])
     
     # 3 (Fail)
     state["next_steps"] = ["s3"]
-    res3 = supervisor.spawning_node(state)
+    res3 = await supervisor.spawning_node(state)
     assert "Failed to spawn s3" in res3["messages"][0]["content"]

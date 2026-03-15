@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 from agent_platform.runtime.core.workspace import WorkspaceContext
 from agent_platform.runtime.core.resource_manager import SimpleCopyResourceManager, SessionInitializer
 from agent_platform.runtime.core.agent_factory import AgentFactory
-from agent_platform.runtime.orch.state import create_initial_state
+from agent_platform.runtime.orch.state import create_initial_state, AgentRole
 from agent_platform.runtime.agents.generator import SystemGeneratorAgent, TaskType
 from agent_platform.runtime.agents.validator import SystemValidatorAgent
 from agent_platform.runtime.agents.supervisor import SupervisorAgent
@@ -12,7 +12,7 @@ from agent_platform.runtime.core.dispatcher import ToolDispatcher, ToolRegistry
 from agent_platform.runtime.core.schema import ToolSource
 from agent_platform.runtime.core.guardrails import GuardrailManager, PolicyGenerator
 from agent_platform.runtime.core.sandbox import ProcessSandboxRunner
-from agent_platform.runtime.orch.models import DecompositionResult, SubAgentTask, ValidationResult
+from agent_platform.runtime.orch.models import PlanningResult, ExecutionStrategy, SubAgentTask, ValidationResult
 from agent_platform.runtime.core.mailbox import Mailbox, FilesystemMailboxProvider
 
 @pytest.fixture
@@ -36,12 +36,18 @@ def v1_env(tmp_path):
     factory = AgentFactory(workspace)
     mailbox = Mailbox(FilesystemMailboxProvider(session_path))
     
-    # SETUP ASYNC MOCKS
     mock_sup_llm = AsyncMock()
-    mock_sup_llm.ainvoke.return_value = DecompositionResult(
-        thought_process="Mock thought",
-        sub_tasks=[SubAgentTask(agent_id="researcher_1", role="worker", instructions="Research")]
-    )
+    mock_sup_llm.ainvoke.side_effect = [
+        PlanningResult(
+            thought_process="Mock thought",
+            strategy=ExecutionStrategy.DECOMPOSE,
+            sub_tasks=[SubAgentTask(agent_id="researcher_1", role=AgentRole.WORKER, instructions="Research")]
+        ),
+        PlanningResult(
+            thought_process="Done.",
+            strategy=ExecutionStrategy.FINISH
+        )
+    ]
 
     mock_gen_llm = AsyncMock()
     mock_gen_llm.ainvoke.return_value.content = "def researcher_1_func(): return 'mocked'"
@@ -77,7 +83,7 @@ async def test_v1_full_platform_lifecycle_with_mocks(v1_env):
     dispatcher = v1_env["dispatcher"]
     validator = v1_env["validator"]
 
-    state = create_initial_state("super_01", user_id, session_id, Path("/tmp"), Path("/tmp"))
+    state = create_initial_state("super_01", user_id, session_id, Path("/tmp"), Path("/tmp"), role=AgentRole.SUPERVISOR)
     graph = supervisor.build_graph()
     final_state = await graph.ainvoke(state)
     assert final_state["quota"].agent_count == 1

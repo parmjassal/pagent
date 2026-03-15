@@ -10,7 +10,7 @@ from agent_platform.runtime.agents.generator import SystemGeneratorAgent
 from agent_platform.runtime.agents.supervisor import SupervisorAgent
 from agent_platform.runtime.orch.unit_compiler import UnitCompiler
 from agent_platform.runtime.orch.result_hook import OffloadingResultHook
-from agent_platform.runtime.orch.models import DecompositionResult, SubAgentTask
+from agent_platform.runtime.orch.models import PlanningResult, ExecutionStrategy, SubAgentTask
 from agent_platform.runtime.core.mailbox import Mailbox, FilesystemMailboxProvider
 from agent_platform.runtime.core.dispatcher import ToolDispatcher, ToolRegistry
 
@@ -30,8 +30,9 @@ def v7_env(tmp_path):
     result_hook = OffloadingResultHook(session_path / "knowledge")
     
     mock_llm = AsyncMock()
-    mock_llm.ainvoke.return_value = DecompositionResult(
+    mock_llm.ainvoke.return_value = PlanningResult(
         thought_process="Spawning worker for unit test.",
+        strategy=ExecutionStrategy.DECOMPOSE,
         sub_tasks=[SubAgentTask(agent_id="worker_1", role=AgentRole.WORKER, instructions="Do work")]
     )
 
@@ -59,10 +60,10 @@ async def test_v7_recursive_subgraph_invocation(v7_env):
     env = v7_env
     supervisor = env["supervisor"]
     
-    state = create_initial_state("super", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"))
+    state = create_initial_state("super", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"), role=AgentRole.SUPERVISOR)
     
-    # 1. DECOMPOSE
-    decomp_res = await supervisor.task_decomposition_node(state)
+    # 1. PLAN
+    decomp_res = await supervisor.planning_node(state)
     state.update(decomp_res)
 
     # 2. SPAWN
