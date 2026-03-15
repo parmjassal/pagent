@@ -41,6 +41,7 @@ class AgentState(TypedDict):
     inbox_path: Path
     outbox_path: Path
     knowledge_path: Path
+    todo_path: Path # New: Pointer to session TODO directory
     quota: QuotaState
     current_depth: int
     generated_output: Optional[str]
@@ -57,6 +58,7 @@ def create_initial_state(
     inbox_path: Path, 
     outbox_path: Path,
     knowledge_path: Optional[Path] = None,
+    todo_path: Optional[Path] = None, # New
     role: AgentRole = AgentRole.WORKER,
     current_depth: int = 0,
     max_agents: int = 50,
@@ -71,6 +73,7 @@ def create_initial_state(
         "inbox_path": inbox_path,
         "outbox_path": outbox_path,
         "knowledge_path": knowledge_path or Path("/tmp/knowledge"),
+        "todo_path": todo_path or Path("/tmp/todo"), # Fallback
         "quota": SessionQuota(max_agents=max_agents),
         "current_depth": current_depth,
         "generated_output": generated_output,

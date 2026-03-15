@@ -36,7 +36,9 @@ class AgentFactory:
         agent_dir = self.workspace.get_agent_dir(user_id, session_id, agent_id)
         inbox_path = agent_dir / "inbox"
         outbox_path = agent_dir / "outbox"
-        knowledge_path = self.workspace.get_session_dir(user_id, session_id) / "knowledge"
+        session_dir = self.workspace.get_session_dir(user_id, session_id)
+        knowledge_path = session_dir / "knowledge"
+        todo_path = session_dir / "todo"
 
         # 2. Ensure directories exist
         inbox_path.mkdir(parents=True, exist_ok=True)
@@ -51,6 +53,7 @@ class AgentFactory:
             inbox_path=inbox_path,
             outbox_path=outbox_path,
             knowledge_path=knowledge_path,
+            todo_path=todo_path,
             current_depth=parent_depth + 1,
             max_agents=current_quota.max_agents,
             generated_output=generated_output

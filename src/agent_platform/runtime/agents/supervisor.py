@@ -6,6 +6,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from ..orch.state import AgentState, AgentRole
 from ..orch.quota import SessionQuota
 from ..core.agent_factory import AgentFactory
+from ..core.todo import TODOManager, ScopedTask
 from .generator import SystemGeneratorAgent, TaskType
 from ..orch.logic import LoopMonitor
 from ..core.http_client import get_platform_http_client
@@ -41,6 +42,7 @@ class SupervisorAgent:
             ).with_structured_output(DecompositionResult)
 
     def _should_continue(self, state: AgentState) -> str:
+        """Centralized router with Role-Aware Loop Detection."""
         node_threshold = 3 if state["role"] == AgentRole.SUPERVISOR else 10
         if LoopMonitor.check_node_loop(state, "decompose", threshold=node_threshold):
             return "abort"
@@ -51,9 +53,8 @@ class SupervisorAgent:
         return END
 
     def task_decomposition_node(self, state: AgentState) -> AgentState:
-        """Invokes the LLM to decompose the task using an external template."""
+        """Invokes the LLM to decompose the task and persists it to TODO."""
         
-        # 1. Resolve Template from Session
         template_path = state["inbox_path"].parent.parent.parent / "prompts" / "supervisor_decompose.txt"
         system_instruction = "You are a task decomposition supervisor."
         if template_path.exists():
@@ -65,7 +66,20 @@ class SupervisorAgent:
         ]
         
         result: DecompositionResult = self.llm.invoke(prompt)
-        next_steps = [task.agent_id for task in result.sub_tasks]
+        
+        # PERSIST TO TODO DIRECTORY
+        todo_mgr = TODOManager(state["todo_path"].parent)
+        next_steps = []
+        for task_def in result.sub_tasks:
+            task_id = todo_mgr.add_task(ScopedTask(
+                title=f"Task for {task_def.agent_id}",
+                description=task_def.instructions,
+                assigned_to=task_def.agent_id,
+                metadata={"role": task_def.role}
+            ))
+            next_steps.append(task_def.agent_id)
+        
+        # Prepare metadata for the next agent role (taking the first one)
         next_role = result.sub_tasks[0].role if result.sub_tasks else AgentRole.WORKER
         instructions = result.sub_tasks[0].instructions if result.sub_tasks else ""
 
