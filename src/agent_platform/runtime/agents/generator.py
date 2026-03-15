@@ -61,8 +61,11 @@ class SystemGeneratorAgent:
         if template_path.exists():
             system_instruction = template_path.read_text()
 
+        # Resolve Task Context from metadata
+        task_context = state.get("metadata", {}).get("current_task_instructions", "No specific instructions provided.")
+
         # 2. Invoke LLM
-        instruction = f"Target ID: {target_id}\nTask: {system_instruction}"
+        instruction = f"Target Agent ID: {target_id}\nTarget Task Description: {task_context}\n\nSystem Guidelines:\n{system_instruction}"
         logger.debug(f"Generator Input ({task_type.value}): {instruction}")
         
         response = await self.llm.ainvoke([SystemMessage(content=instruction)])
