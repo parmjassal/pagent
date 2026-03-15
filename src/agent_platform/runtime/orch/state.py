@@ -22,6 +22,14 @@ def update_counts(left: Dict[str, int], right: Dict[str, int]) -> Dict[str, int]
         new_counts[k] = new_counts.get(k, 0) + v
     return new_counts
 
+def update_interactions(left: List[str], right: Union[List[str], None]) -> List[str]:
+    """Custom reducer for active_interactions. [] clears the list."""
+    if right is None:
+        return left
+    if not right:
+        return []
+    return left + right
+
 class AgentState(TypedDict):
     """
     The base state for all agents in the platform.
@@ -32,13 +40,14 @@ class AgentState(TypedDict):
     session_id: str
     inbox_path: Path
     outbox_path: Path
-    knowledge_path: Path # Pointer to session knowledge base
+    knowledge_path: Path
     quota: QuotaState
     current_depth: int
     generated_output: Optional[str]
     messages: Annotated[List[Dict[str, Any]], operator.add]
     next_steps: Annotated[List[str], update_next_steps]
     node_counts: Annotated[Dict[str, int], update_counts]
+    active_interactions: Annotated[List[str], update_interactions]
     metadata: Annotated[Dict[str, Any], operator.ior]
 
 def create_initial_state(
@@ -47,7 +56,7 @@ def create_initial_state(
     session_id: str, 
     inbox_path: Path, 
     outbox_path: Path,
-    knowledge_path: Optional[Path] = None, # New
+    knowledge_path: Optional[Path] = None,
     role: AgentRole = AgentRole.WORKER,
     current_depth: int = 0,
     max_agents: int = 50,
@@ -61,12 +70,13 @@ def create_initial_state(
         "session_id": session_id,
         "inbox_path": inbox_path,
         "outbox_path": outbox_path,
-        "knowledge_path": knowledge_path or Path("/tmp/knowledge"), # Fallback
+        "knowledge_path": knowledge_path or Path("/tmp/knowledge"),
         "quota": SessionQuota(max_agents=max_agents),
         "current_depth": current_depth,
         "generated_output": generated_output,
         "messages": [],
         "next_steps": [],
         "node_counts": {},
+        "active_interactions": [],
         "metadata": {}
     }
