@@ -30,7 +30,7 @@ We provide setup scripts to automate the creation of a virtual environment and i
 ```bash
 chmod +x scripts/setup.sh
 ./scripts/setup.sh
-source .venv/bin/activate
+source .vcli/bin/activate
 ```
 
 **Windows:**
@@ -62,10 +62,15 @@ python -m agent_platform.cli --session-id <your-session-id>
 
 **pagent** is designed to work in restricted corporate environments and with local LLM proxies.
 
-### Custom API Endpoints
-You can point the platform to a custom OpenAI-compatible API (e.g., Azure, LiteLLM, Ollama):
+### Custom API Endpoints & Models
+You can point the platform to a custom OpenAI-compatible API and specify the model:
 ```bash
-python -m agent_platform.cli --openai-base-url "https://my-proxy.internal/v1"
+python -m agent_platform.cli --openai-base-url "https://my-proxy.internal/v1" --model-name "gpt-4-turbo"
+```
+Or via environment variables:
+```bash
+export AGENT_MODEL_NAME="claude-3-5-sonnet"
+python -m agent_platform.cli
 ```
 
 ### Corporate Proxy & Redirects

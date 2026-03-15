@@ -15,7 +15,8 @@ console = Console()
 def serve(
     user_id: Optional[str] = typer.Option(None, help="The ID of the user. Defaults to current process user."),
     session_id: Optional[str] = typer.Option(None, help="The session ID to resume."),
-    openai_base_url: Optional[str] = typer.Option(None, envvar="OPENAI_BASE_URL", help="Custom OpenAI endpoint.")
+    openai_base_url: Optional[str] = typer.Option(None, envvar="OPENAI_BASE_URL", help="Custom OpenAI endpoint."),
+    model_name: str = typer.Option("gpt-4o", envvar="AGENT_MODEL_NAME", help="The LLM model name to use.")
 ):
     """
     Starts the pagent runtime with a real-time visualization of the orchestration tree.
@@ -27,13 +28,15 @@ def serve(
     resolved_session_id = start_runtime(
         user_id=user_id, 
         session_id=session_id,
-        openai_base_url=openai_base_url
+        openai_base_url=openai_base_url,
+        model_name=model_name
     )
     
     # 2. Build Rich UI
     tree = Tree(f"[bold cyan]Session: {resolved_session_id}[/bold cyan]")
     infra = tree.add("Infrastructure")
     infra.add(f"User: [green]{user_id}[/green]")
+    infra.add(f"Model: [blue]{model_name}[/blue]")
     infra.add("Mailbox: [blue]Listening...[/blue]")
     
     agents = tree.add("Agent Tree")
@@ -43,7 +46,6 @@ def serve(
     console.print(Panel.fit("[bold blue]pagent[/bold blue] - Multi-Agent Runtime", border_style="blue"))
     
     with Live(tree, console=console, refresh_per_second=4):
-        # Simulation of orchestration progress for the skeleton demo
         try:
             while True:
                 time.sleep(1)
