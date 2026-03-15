@@ -39,8 +39,8 @@ async def test_sub_supervisor_spawning_flow(v3_env):
     assert state["metadata"]["strategy"] == ExecutionStrategy.DECOMPOSE
     
     spawn_res = await supervisor.spawning_node(state)
-    assert "Spawned sub_supervisor_01 via Mailbox" in spawn_res["messages"][-1]["content"]
+    assert "Spawned top_super/sub_supervisor_01 via Mailbox" in spawn_res["messages"][-1]["content"]
     
     # Verify Mailbox Role
-    msg = env["mailbox"].receive("sub_supervisor_01")
+    msg = env["mailbox"].receive("top_super/sub_supervisor_01")
     assert msg["role"] == AgentRole.SUPERVISOR

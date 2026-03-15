@@ -62,7 +62,7 @@ async def test_v3_repo_analysis_with_mocked_llm(repo_env):
     state.update(decomp_state)
     spawn_res = await supervisor.spawning_node(state)
     # Corrected assertion based on actual log message
-    assert "Spawned analyst_agent via Mailbox" in spawn_res["messages"][-1]["content"]
+    assert "Spawned super_01/analyst_agent via Mailbox" in spawn_res["messages"][-1]["content"]
 
     analyst_state = create_initial_state("analyst_agent", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"))
     analyst_state["metadata"]["target_folder"] = str(env["repo_path"])

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import aiosqlite
+import os
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -64,13 +65,18 @@ class AutonomousScheduler:
             await asyncio.sleep(2)
 
     async def tick(self):
+        """Recursively discovers and processes agents."""
         agents_root = self.session_path / "agents"
         if not agents_root.exists():
             return
-        for agent_dir in agents_root.iterdir():
-            if not agent_dir.is_dir():
-                continue
-            await self._process_agent(agent_dir.name)
+
+        # Use os.walk to find all agent directories (those with an 'inbox')
+        for root, dirs, files in os.walk(agents_root):
+            root_path = Path(root)
+            if (root_path / "inbox").exists():
+                # The agent_id is the relative path from agents_root
+                agent_id = str(root_path.relative_to(agents_root))
+                await self._process_agent(agent_id)
 
     async def _process_agent(self, agent_id: str):
         inbox_msg = self.mailbox.receive(agent_id)

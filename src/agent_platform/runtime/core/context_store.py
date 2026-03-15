@@ -34,26 +34,35 @@ class FilesystemContextStore(ContextStore):
     """
     def __init__(self, session_root: Path):
         self.session_root = session_root
+        self.agents_root = session_root / "agents"
 
     def _get_agent_dir(self, agent_id: str) -> Path:
-        return self.session_root / "agents" / agent_id
+        return self.agents_root / agent_id
 
     def _get_ancestor_contexts(self, agent_id: str) -> List[Path]:
         """
-        Determines the list of visible global_context directories.
-        In this skeleton, we'll implement a simple one-level parent lookup.
-        In production, this would use the session's agent hierarchy metadata.
+        Walks up the directory tree from the agent directory to the session root,
+        collecting all 'global_context' directories found.
         """
         agent_dir = self._get_agent_dir(agent_id)
         visible_paths = []
         
-        # 1. Current Agent Context
-        if (agent_dir / "global_context").exists():
-            visible_paths.append(agent_dir / "global_context")
+        current = agent_dir
+        # Traverse up from the agent's specific directory until we reach the session root
+        while current and current != self.session_root:
+            context_path = current / "global_context"
+            if context_path.exists() and context_path.is_dir():
+                visible_paths.append(context_path)
             
-        # 2. Session Root Context (Optional common base)
-        if (self.session_root / "global_context").exists():
-            visible_paths.append(self.session_root / "global_context")
+            # Move to parent
+            if current == self.agents_root:
+                break
+            current = current.parent
+            
+        # Finally, check for a global context at the session root itself
+        root_context = self.session_root / "global_context"
+        if root_context.exists() and root_context.is_dir():
+            visible_paths.append(root_context)
             
         return visible_paths
 

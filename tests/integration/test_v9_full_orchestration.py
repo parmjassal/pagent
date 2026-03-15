@@ -169,6 +169,6 @@ async def test_v9_full_architectural_audit_flow(v9_env):
 
     # C. Check if worker result bubbled up
     # The last system message should contain the result from Turn 3 merge
-    assert any("analyst returned" in m["content"] for m in final_state["messages"] if m["role"] == "system")
+    assert any("super/analyst returned" in m["content"] for m in final_state["messages"] if m["role"] == "system")
     assert final_state["metadata"]["strategy"] == ExecutionStrategy.FINISH
     assert final_state["quota"].agent_count == 1 # Supervisor + Analyst (initially 0, spawns 1)

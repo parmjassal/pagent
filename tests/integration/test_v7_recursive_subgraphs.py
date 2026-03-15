@@ -81,7 +81,7 @@ async def test_v7_recursive_subgraph_invocation(v7_env):
     spawn_res = await supervisor.spawning_node(state)
     
     # 3. VERIFY MERGE
-    assert "Sub-agent worker_1 returned" in spawn_res["messages"][0]["content"]
+    assert "Sub-agent super/worker_1 returned" in spawn_res["messages"][0]["content"]
     assert "Success from worker_1" in spawn_res["messages"][0]["content"]
     assert len(spawn_res["next_steps"]) == 0
     assert spawn_res["quota"].agent_count == 1

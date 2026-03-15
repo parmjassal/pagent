@@ -60,4 +60,5 @@ async def test_v0_orchestration_flow(integ_env):
 
     # 1 agent spawned in the first iteration
     assert final_state["quota"].agent_count == 1
-    assert (env["session_path"] / "agents" / "researcher_1").exists()
+    # researcher_1 spawned by 'super' -> path: agents/super/researcher_1
+    assert (env["session_path"] / "agents" / "super" / "researcher_1").exists()

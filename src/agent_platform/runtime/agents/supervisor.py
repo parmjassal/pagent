@@ -141,7 +141,10 @@ class SupervisorAgent:
         if not state["next_steps"]:
             return state
 
-        sub_agent_id = state["next_steps"][0]
+        raw_sub_id = state["next_steps"][0]
+        # Construct hierarchical ID: current_agent_id/sub_id
+        sub_agent_id = f"{state['agent_id']}/{raw_sub_id}"
+        
         prompt = state.get("generated_output")
         next_role = state.get("metadata", {}).get("next_agent_role", AgentRole.WORKER)
 

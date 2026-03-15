@@ -172,7 +172,7 @@ async def test_v10_triplet_extraction_workflow(v10_env):
     assert "(OrderProcessor, concurrency, 5)" in content
 
     # 2. Verify worker result was bubbled up
-    assert any("analyst_01 returned" in m["content"] for m in final_state["messages"] if m["role"] == "system")
+    assert any("super/analyst_01 returned" in m["content"] for m in final_state["messages"] if m["role"] == "system")
     
     # 3. Verify semantic index exists
     assert (env["session_path"] / "semantic_index").exists()

@@ -27,8 +27,10 @@ class FilesystemMailboxProvider(MailboxProvider):
     def send(self, agent_id: str, message: Dict[str, Any]):
         inbox = self._get_inbox_path(agent_id)
         inbox.mkdir(parents=True, exist_ok=True)
-        # Unique message name to prevent collision (for now simplified)
-        path = inbox / f"msg_{message.get('id', 'latest')}.json"
+        # Unique message name to prevent collision
+        # Sanitize ID to prevent directory issues (replace / with _)
+        safe_id = str(message.get('id', 'latest')).replace("/", "_")
+        path = inbox / f"msg_{safe_id}.json"
         with open(path, "w") as f:
             json.dump(message, f)
 

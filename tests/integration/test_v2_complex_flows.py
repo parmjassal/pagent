@@ -51,7 +51,6 @@ async def test_v2_recursive_depth_and_handover(v2_env):
     env = v2_env
     supervisor = env["supervisor"]
     
-    # Set mock ainvoke response
     env["mock_sup_llm"].ainvoke.return_value = PlanningResult(
         thought_process="Spawning L1",
         strategy=ExecutionStrategy.DECOMPOSE,
@@ -72,7 +71,7 @@ async def test_v2_recursive_depth_and_handover(v2_env):
         strategy=ExecutionStrategy.DECOMPOSE,
         sub_tasks=[SubAgentTask(agent_id="agent_l2", role=AgentRole.WORKER, instructions="Task")]
     )
-    state["agent_id"] = "agent_l1"
+    state["agent_id"] = "super/agent_l1" # Correct hierarchical ID for current agent
     state["current_depth"] = 1
     
     res2 = await supervisor.planning_node(state)
@@ -81,8 +80,9 @@ async def test_v2_recursive_depth_and_handover(v2_env):
     state["quota"] = update_quota(state["quota"], res_spawn2["quota"])
     
     assert state["quota"].agent_count == 2
-    msg = env["mailbox"].receive("agent_l2")
-    assert msg["sender"] == "agent_l1"
+    # The spawned ID is parent/child -> super/agent_l1/agent_l2
+    msg = env["mailbox"].receive("super/agent_l1/agent_l2")
+    assert msg["sender"] == "super/agent_l1"
 
 @pytest.mark.asyncio
 async def test_v2_validation_positive_negative(v2_env):
@@ -90,13 +90,11 @@ async def test_v2_validation_positive_negative(v2_env):
     validator = env["validator"]
     state = create_initial_state("a1", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"))
 
-    # POSITIVE
     state["generated_output"] = "safe code"
     env["mock_val_llm"].ainvoke.return_value = ValidationResult(is_valid=True, reasoning="Safe")
     val_res = await validator.validate_node(state)
     assert val_res["is_valid"] is True
 
-    # NEGATIVE
     state["generated_output"] = "destructive code"
     env["mock_val_llm"].ainvoke.return_value = ValidationResult(is_valid=False, reasoning="Violation")
     val_res_fail = await validator.validate_node(state)
@@ -123,4 +121,4 @@ async def test_v2_session_quota_enforcement(v2_env):
     # 3 (Fail)
     state["next_steps"] = ["s3"]
     res3 = await supervisor.spawning_node(state)
-    assert "Failed to spawn s3" in res3["messages"][0]["content"]
+    assert "Failed to spawn super/s3" in res3["messages"][0]["content"]
