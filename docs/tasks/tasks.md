@@ -11,11 +11,19 @@
 - [x] **SQLite Checkpointer:** Real graph state persistence in `state.db`.
 - [ ] **Autonomous Scheduler:** Automated triggering of Mailbox and HITL events.
 
+## Prompt Engineering & Tool-Use
+- [x] **Formalize Supervisor Prompts:** Detailed task decomposition logic.
+- [x] **Formalize Generator Prompts:** Best practices for Prompt and Tool generation.
+- [x] **Formalize Validator Prompts:** Quality and safety audit logic.
+- [x] **Formalize Guardrail Policy Prompts:** Rules for dynamic policy generation.
+- [x] **Agent Tool-Use Implementation:** Standardized `AgentToolNode` utilizing the `ToolDispatcher`.
+
 ## Dynamic Agent & Tool Orchestration
 - [x] Recursive Spawning Logic (with `max_spawn_depth` and In-Memory Quota checks)
 - [x] Agent Lifecycle Manager (Creation/Cleanup of Agent Pointers)
 - [x] **Tool Source Registry:** Categorize tools as COMMUNITY or DYNAMIC (Persistent metadata).
 - [x] **Tool Execution Dispatcher:** Direct tools to Native or Sandbox based on source.
+- [x] **Agent Role Segregation:** SUPERVISOR vs WORKER logic.
 - [x] **Human-in-the-Loop (HITL):** Persistent approval queue and state-interrupt model.
 
 ## Default System Agents & Guardrails
