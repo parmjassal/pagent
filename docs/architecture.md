@@ -10,103 +10,73 @@ The platform is built on the following architectural pillars:
 2.  **Immutable Execution Contexts [Y]:** Sessions are hydrated via copying (not symlinking) to ensure global upgrades do not disrupt active work.
 3.  **Service-Oriented Multi-tenancy [Y]:** Native support for `user_id` and `session_id` throughout the stack.
 4.  **Resource-bounded Autonomy [Y]:** Recursive spawning is governed by depth limits, session quotas, and loop detection.
-5.  **State Persistence & Resumability [N]:** The ability to recover graph state from disk after process failure (Pending SQLiteSaver integration).
+5.  **State Persistence & Resumability [Y]:** The ability to recover graph state from disk after process failure via SQLiteSaver.
+6.  **Persistent Human-in-the-Loop [Y]:** Asynchronous approval requests that survive process restarts.
 
 ---
 
-## 1. Hierarchical Workspace (`.pagent`)
+## 1. Project Package Structure
 
-The workspace root organizes data to support multi-tenancy, resource inheritance, and **Knowledge Persistence**.
+The `runtime` package is organized into four domain-isolated sub-packages.
+
+```text
+src/agent_platform/runtime/
+├── core/           # Low-level system primitives
+│   ├── workspace.py        # Workspace hierarchy management
+│   ├── sandbox.py          # Process-level isolation
+│   ├── dispatcher.py       # Tool execution routing
+│   ├── hitl.py             # [NEW] Interaction management (HITL)
+│   ├── mailbox.py          # Filesystem transport logic
+│   └── agent_factory.py    # Recursive agent initialization
+│
+├── orch/           # LangGraph plumbing & State
+│   ├── state.py            # Reducer-based AgentState
+│   ├── quota.py            # Session usage models
+│   └── logic.py            # Loop and repetition monitor
+│
+├── agents/         # System agent implementations
+│   ├── supervisor.py       # Task decomposition & orchestration
+│   └── validator.py        # Output safety verification
+│
+├── storage/        # Memory & Persistence
+│   ├── knowledge.py        # Markdown FactSheet management
+│   └── semantic_search.py  # Hybrid Sparse/LSH indexing engine
+```
+
+---
+
+## 2. Hierarchical Workspace (`.pagent`)
+
+The workspace root organizes data to support multi-tenancy and knowledge persistence.
 
 ### Directory Structure
--   `global/`: Shared system-wide prompts, skills, and guidelines.
--   `user_{user_id}/`: Persistent user profile and configuration.
 -   `user_{user_id}/{session_id}/`: The atomic unit of execution.
     -   `guidelines.md`: Session-specific safety rules.
-    -   `knowledge/`: **[NEW]** Extracted "Fact Sheets" (Markdown) from large-file analysis.
-    -   `semantic_index/`: **[NEW]** Hybrid Sparse/LSH indices for local file search.
-    -   `platform.log`: **[NEW]** Persistent session-level execution trace.
+    -   `knowledge/`: Extracted "Fact Sheets" (Markdown).
+    -   `interactions/`: **[NEW]** Persistent HITL (Human-in-the-Loop) JSON requests.
+    -   `platform.log`: Persistent session-level execution trace.
     -   `agents/{agent_id}/`: Individual agent sandbox.
+        -   `state.db`: LangGraph SQLite checkpointer.
 
 ---
 
-## 2. Specialized System Agents
+## 3. Human-in-the-Loop (HITL) Model
 
-The platform coordinates a hierarchy of agents through standardized, dependency-injected interfaces.
+The platform uses a **State-Interrupt** model for human approvals to ensure non-blocking, parallel-friendly execution.
 
-### 🤖 Supervisor Agent
-The primary orchestrator. Uses structured LLM output (`DecompositionResult`) to break down tasks and recursively spawn sub-agents (Supervisors or Workers).
-
-### 🤖 Generator Agent
-A generic code/prompt writer. Hydrated with different system prompts to generate either sub-agent instructions (`PROMPT`) or Python code for dynamic tools (`TOOL`).
-
-### 🤖 Validator Agent
-Ensures generated content adheres to `guidelines.md`. Uses structured LLM output (`ValidationResult`) to accept or reject generator output.
-
-### 🤖 Search Agent
-Manages local folder indexing and semantic querying using the `SemanticSearchEngine`. Supports **Chunked Indexing** for large file analysis.
-
-### 🤖 FactSheet Agent
-Extracts granular findings from file chunks into persistent Markdown "Fact Sheets" within the `knowledge/` directory.
+### The Flow
+1.  **Trigger:** An agent hits a sensitive operation (e.g., destructive tool).
+2.  **Request:** The agent submits a `HITLRequest` via the `InteractionManager`.
+3.  **Suspend:** The agent calls LangGraph `interrupt()`, saving its state to `state.db` and halting.
+4.  **Resolve:** A human (via CLI/API) provides a `HITLResponse`. The `InteractionManager` updates the persistent JSON.
+5.  **Resume:** The Scheduler detects the resolution and re-triggers the agent graph from the last checkpoint.
 
 ---
 
-## 3. Security & Safety Mechanisms
-
-### Dual-Path Tool Dispatching
--   **Native (COMMUNITY):** Trusted tools run within the main process for performance.
--   **Sandboxed (DYNAMIC):** AI-written tools run via `ProcessSandboxRunner` with strict timeouts and process-level isolation.
-
-### Role-Aware Loop Detection
--   **Node Frequency:** Tracks visits to graph nodes via reducers.
--   **Semantic Repetition:** Detects identical message cycles.
--   **Thresholds:** Supervisors have strict limits (e.g., 3 retries); Workers have higher limits (e.g., 10).
-
-### Proxy & Connectivity
--   **Custom Endpoints:** Support for `OPENAI_BASE_URL` for local models or proxies.
--   **Redirect Detection:** Custom HTTP hook detects corporate captive portals and outputs the location link.
-
----
-
-## 4. Interaction & Observability
-
-### Rich UI
-The CLI provides a live-updating `rich.tree` visualization of the orchestration hierarchy, showing the "Thinking" state and "Agent Tree" progress in real-time.
-
-### Tiered Logging
--   **stdout:** Reserved for the Rich UI.
--   **stderr:** Human-readable functional trace for developers.
--   **file:** Full session trace persisted to `platform.log` for post-mortem analysis.
-
----
-
-## 5. Current Gaps & Roadmap
+## 4. Current Gaps & Roadmap
 
 | Feature | Status | Priority |
 | :--- | :--- | :--- |
-| **SQLite Checkpointing** | **N** | **High** - Required for true graph resumability. |
-| **Scheduler/Listener** | **N** | **High** - Automated triggering of Mailbox messages. |
+| **Scheduler/Listener** | **N** | **High** - Automated triggering of Mailbox and HITL messages. |
 | **Formal Methods Validator** | **N** | Medium - SMT-based code verification. |
 | **Branching Snapshots** | **N** | Low - Session rewinding and auditing. |
-```mermaid
-sequenceDiagram
-    participant P as Parent Agent
-    participant G as Generator (System)
-    participant V as Validator (System)
-    participant F as Agent Factory
-    participant C as Child Agent
-
-    P->>P: Decompose Task
-    P->>G: Request Prompt/Tool for Child
-    G->>G: Load Session Templates
-    G-->>P: Return Generated Output
-    P->>V: Request Validation
-    V->>V: Load Session guidelines.md
-    V-->>P: is_valid: True/False
-    P->>F: Create Child(agent_id, role, output)
-    F->>F: Check Session Quota & Depth
-    F->>WS: Initialize Child Directories
-    F-->>P: Return Child State
-    P->>Mailbox: Write Task Message to Child Inbox
-    P-->>C: (Handover Complete)
-```

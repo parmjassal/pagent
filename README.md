@@ -10,6 +10,7 @@
 - **Semantic Repo Analysis:** Hybrid Sparse/LSH engine for indexing local folders with chunking support for big files.
 - **Knowledge Management:** Persistent Markdown-based "Fact Sheets" extracted from large context analysis.
 - **Recursive Dynamic Spawning:** Agents can spawn sub-agents up to a configurable depth, with automated handover.
+- **Persistent Human-in-the-Loop:** Asynchronous approval queue for sensitive operations, allowing agents to suspend and resume statefully.
 - **Rich CLI UI:** Real-time visualization of the orchestration tree and agent "thinking" states.
 - **In-Memory Quota Management:** Strict session-level tracking of agent counts and resource usage.
 
@@ -91,10 +92,14 @@ Imagine you are building a **Security Audit Platform**.
 
 ## 🏗 Project Structure
 
-- `src/agent_platform/`: Core platform logic.
+- `src/agent_platform/runtime/`:
+    - `core/`: Infrastructure primitives (Workspace, Sandbox, Dispatcher, Mailbox).
+    - `orch/`: LangGraph orchestration (State, Quota, Logic).
+    - `agents/`: System agent implementations (Supervisor, Generator, Validator, Search).
+    - `storage/`: Memory & Knowledge management (Semantic Index, Fact Sheets).
 - `docs/`: Architecture, guidelines, and roadmap.
 - `scripts/`: OS-specific installation helpers.
-- `tests/`: Unit and full-lifecycle integration tests (V0, V1, V2).
+- `tests/`: Unit and full-lifecycle integration tests (V0-V4).
 
 ---
 
