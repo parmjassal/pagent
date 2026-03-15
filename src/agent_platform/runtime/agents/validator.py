@@ -18,7 +18,7 @@ class SystemValidatorAgent:
         self.llm = llm
         self.workspace = workspace
 
-    def validate_node(self, state: AgentState) -> Dict[str, Any]:
+    async def validate_node(self, state: AgentState) -> Dict[str, Any]:
         """LangGraph node to validate the last generated output."""
         
         generated_content = state.get("generated_output")
@@ -41,7 +41,7 @@ class SystemValidatorAgent:
 
         # 3. Invoke LLM
         instruction = f"{system_instruction}\n\nValidate this content against these guidelines:\n\nContent: {generated_content}\n\nGuidelines: {guidelines}"
-        result: ValidationResult = self.llm.invoke([SystemMessage(content=instruction)])
+        result: ValidationResult = await self.llm.ainvoke([SystemMessage(content=instruction)])
 
         log_msg = f"Validator: is_valid={result.is_valid}, reason='{result.reasoning}'"
         logger.info(log_msg)

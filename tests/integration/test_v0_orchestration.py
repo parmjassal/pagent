@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock
 from agent_platform.runtime.core.workspace import WorkspaceContext
 from agent_platform.runtime.core.resource_manager import SimpleCopyResourceManager, SessionInitializer
 from agent_platform.runtime.core.agent_factory import AgentFactory
@@ -24,13 +24,14 @@ def integ_env(tmp_path):
     factory = AgentFactory(workspace)
     mailbox = Mailbox(FilesystemMailboxProvider(session_path))
     
-    mock_sup_llm = MagicMock()
-    mock_sup_llm.invoke.return_value = DecompositionResult(
+    # CORRECT ASYNCMOCK: The agent calls 'self.llm.ainvoke'
+    mock_sup_llm = AsyncMock()
+    mock_sup_llm.ainvoke.return_value = DecompositionResult(
         thought_process="Decomposing...",
         sub_tasks=[SubAgentTask(agent_id="researcher_1", role="worker", instructions="Task")]
     )
-    mock_gen_llm = MagicMock()
-    mock_gen_llm.invoke.return_value.content = "SYSTEM PROMPT"
+    mock_gen_llm = AsyncMock()
+    mock_gen_llm.ainvoke.return_value.content = "SYSTEM PROMPT"
 
     generator = SystemGeneratorAgent(llm=mock_gen_llm, workspace=workspace)
     supervisor = SupervisorAgent(factory, mailbox, generator, llm=mock_sup_llm)
@@ -40,13 +41,15 @@ def integ_env(tmp_path):
         "supervisor": supervisor, "mailbox": mailbox
     }
 
-def test_v0_orchestration_flow(integ_env):
+@pytest.mark.asyncio
+async def test_v0_orchestration_flow(integ_env):
     env = integ_env
     supervisor = env["supervisor"]
     
     initial_state = create_initial_state("super", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"))
     graph = supervisor.build_graph()
-    final_state = graph.invoke(initial_state)
+    
+    final_state = await graph.ainvoke(initial_state)
 
     assert final_state["quota"].agent_count == 1
     assert (env["session_path"] / "agents" / "researcher_1").exists()

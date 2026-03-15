@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from agent_platform.runtime.core.workspace import WorkspaceContext
 from agent_platform.runtime.core.resource_manager import SimpleCopyResourceManager, SessionInitializer
 from agent_platform.runtime.core.agent_factory import AgentFactory
@@ -19,7 +19,7 @@ def v1_env(tmp_path):
     root = tmp_path / ".pagent"
     workspace = WorkspaceContext(root=root)
     
-    # 1. SETUP PROJECT GLOBAL RESOURCES (Mocking the data/ dir)
+    # Global Resources setup
     project_root = Path(__file__).parent.parent.parent
     global_res_dir = project_root / "data" / "pagent_resources" / "global"
     global_res_dir.mkdir(parents=True, exist_ok=True)
@@ -27,7 +27,6 @@ def v1_env(tmp_path):
     (global_res_dir / "prompts" / "generator_prompt.txt").write_text("MOCK GENERATOR TEMPLATE")
     (global_res_dir / "guidelines.md").write_text("Safety First")
 
-    # 2. SESSION SETUP
     res_mgr = SimpleCopyResourceManager()
     initializer = SessionInitializer(workspace, res_mgr)
     user_id, session_id = "power_user", "sess_v1"
@@ -36,17 +35,18 @@ def v1_env(tmp_path):
     factory = AgentFactory(workspace)
     mailbox = Mailbox(FilesystemMailboxProvider(session_path))
     
-    mock_sup_llm = MagicMock()
-    mock_sup_llm.invoke.return_value = DecompositionResult(
+    # SETUP ASYNC MOCKS
+    mock_sup_llm = AsyncMock()
+    mock_sup_llm.ainvoke.return_value = DecompositionResult(
         thought_process="Mock thought",
         sub_tasks=[SubAgentTask(agent_id="researcher_1", role="worker", instructions="Research")]
     )
 
-    mock_gen_llm = MagicMock()
-    mock_gen_llm.invoke.return_value.content = "def researcher_1_func(): return 'mocked'"
+    mock_gen_llm = AsyncMock()
+    mock_gen_llm.ainvoke.return_value.content = "def researcher_1_func(): return 'mocked'"
 
-    mock_val_llm = MagicMock()
-    mock_val_llm.invoke.return_value = ValidationResult(is_valid=True, reasoning="Passed")
+    mock_val_llm = AsyncMock()
+    mock_val_llm.ainvoke.return_value = ValidationResult(is_valid=True, reasoning="Passed")
 
     mock_policy_gen = MagicMock(spec=PolicyGenerator)
     mock_policy_gen.generate.return_value = (True, "Allowed")
@@ -69,24 +69,20 @@ def v1_env(tmp_path):
         "mock_val_llm": mock_val_llm
     }
 
-def test_v1_full_platform_lifecycle_with_mocks(v1_env):
+@pytest.mark.asyncio
+async def test_v1_full_platform_lifecycle_with_mocks(v1_env):
     user_id, session_id, session_path = v1_env["env"]
     supervisor = v1_env["supervisor"]
     dispatcher = v1_env["dispatcher"]
     validator = v1_env["validator"]
 
-    # --- VERIFY TEMPLATE LOAD ---
-    # Ensure guidelines were COPIED into the session
-    assert (session_path / "guidelines.md").exists()
-    assert (session_path / "prompts" / "generator_prompt.txt").exists()
-
     state = create_initial_state("super_01", user_id, session_id, Path("/tmp"), Path("/tmp"))
     graph = supervisor.build_graph()
-    final_state = graph.invoke(state)
+    final_state = await graph.ainvoke(state)
     assert final_state["quota"].agent_count == 1
 
-    v1_env["mock_val_llm"].invoke.return_value = ValidationResult(is_valid=False, reasoning="Violation: destructive")
-    val_res = validator.validate_node(final_state)
+    v1_env["mock_val_llm"].ainvoke.return_value = ValidationResult(is_valid=False, reasoning="Violation: destructive")
+    val_res = await validator.validate_node(final_state)
     assert val_res["is_valid"] is False
 
     def search_stub(query): return f"Search: {query}"

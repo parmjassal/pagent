@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from agent_platform.runtime.core.workspace import WorkspaceContext
 from agent_platform.runtime.core.resource_manager import SimpleCopyResourceManager, SessionInitializer
 from agent_platform.runtime.core.agent_factory import AgentFactory
@@ -32,18 +32,10 @@ def v2_env(tmp_path):
     factory = AgentFactory(workspace)
     mailbox = Mailbox(FilesystemMailboxProvider(session_path))
     
-    # SETUP MOCKS
-    mock_sup_llm = MagicMock()
-    mock_sup_llm.invoke.return_value = DecompositionResult(
-        thought_process="Decomposing",
-        sub_tasks=[SubAgentTask(agent_id="sub_agent", role="worker", instructions="Task")]
-    )
-    
-    mock_gen_llm = MagicMock()
-    mock_gen_llm.invoke.return_value.content = "MOCKED OUTPUT"
-    
-    mock_val_llm = MagicMock()
-    mock_val_llm.invoke.return_value = ValidationResult(is_valid=True, reasoning="Passed")
+    # SETUP ASYNC MOCKS
+    mock_sup_llm = AsyncMock()
+    mock_gen_llm = AsyncMock()
+    mock_val_llm = AsyncMock()
 
     generator = SystemGeneratorAgent(llm=mock_gen_llm, workspace=workspace)
     validator = SystemValidatorAgent(llm=mock_val_llm, workspace=workspace)
@@ -55,11 +47,13 @@ def v2_env(tmp_path):
         "mock_val_llm": mock_val_llm, "mock_sup_llm": mock_sup_llm
     }
 
-def test_v2_recursive_depth_and_handover(v2_env):
+@pytest.mark.asyncio
+async def test_v2_recursive_depth_and_handover(v2_env):
     env = v2_env
     supervisor = env["supervisor"]
     
-    env["mock_sup_llm"].invoke.return_value = DecompositionResult(
+    # Set mock ainvoke response
+    env["mock_sup_llm"].ainvoke.return_value = DecompositionResult(
         thought_process="Spawning L1",
         sub_tasks=[SubAgentTask(agent_id="agent_l1", role="worker", instructions="Task")]
     )
@@ -67,20 +61,20 @@ def test_v2_recursive_depth_and_handover(v2_env):
     state = create_initial_state("super", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"))
     
     # 1. Spawn L1
-    res1 = supervisor.task_decomposition_node(state)
+    res1 = await supervisor.task_decomposition_node(state)
     state.update(res1)
     res_spawn1 = supervisor.spawning_node(state)
     state["quota"] = update_quota(state["quota"], res_spawn1["quota"])
     
     # 2. Spawn L2 from L1
-    env["mock_sup_llm"].invoke.return_value = DecompositionResult(
+    env["mock_sup_llm"].ainvoke.return_value = DecompositionResult(
         thought_process="Spawning L2",
         sub_tasks=[SubAgentTask(agent_id="agent_l2", role="worker", instructions="Task")]
     )
     state["agent_id"] = "agent_l1"
     state["current_depth"] = 1
     
-    res2 = supervisor.task_decomposition_node(state)
+    res2 = await supervisor.task_decomposition_node(state)
     state.update(res2)
     res_spawn2 = supervisor.spawning_node(state)
     state["quota"] = update_quota(state["quota"], res_spawn2["quota"])
@@ -89,22 +83,26 @@ def test_v2_recursive_depth_and_handover(v2_env):
     msg = env["mailbox"].receive("agent_l2")
     assert msg["sender"] == "agent_l1"
 
-def test_v2_validation_positive_negative(v2_env):
+@pytest.mark.asyncio
+async def test_v2_validation_positive_negative(v2_env):
     env = v2_env
     validator = env["validator"]
     state = create_initial_state("a1", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"))
 
     # POSITIVE
     state["generated_output"] = "safe code"
-    env["mock_val_llm"].invoke.return_value = ValidationResult(is_valid=True, reasoning="Safe")
-    assert validator.validate_node(state)["is_valid"] is True
+    env["mock_val_llm"].ainvoke.return_value = ValidationResult(is_valid=True, reasoning="Safe")
+    val_res = await validator.validate_node(state)
+    assert val_res["is_valid"] is True
 
     # NEGATIVE
     state["generated_output"] = "destructive code"
-    env["mock_val_llm"].invoke.return_value = ValidationResult(is_valid=False, reasoning="Violation")
-    assert validator.validate_node(state)["is_valid"] is False
+    env["mock_val_llm"].ainvoke.return_value = ValidationResult(is_valid=False, reasoning="Violation")
+    val_res_fail = await validator.validate_node(state)
+    assert val_res_fail["is_valid"] is False
 
-def test_v2_session_quota_enforcement(v2_env):
+@pytest.mark.asyncio
+async def test_v2_session_quota_enforcement(v2_env):
     env = v2_env
     supervisor = env["supervisor"]
     

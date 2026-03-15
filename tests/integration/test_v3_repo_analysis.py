@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from agent_platform.runtime.core.workspace import WorkspaceContext
 from agent_platform.runtime.core.resource_manager import SimpleCopyResourceManager, SessionInitializer
 from agent_platform.runtime.core.agent_factory import AgentFactory
@@ -30,13 +30,13 @@ def repo_env(tmp_path):
     factory = AgentFactory(workspace)
     mailbox = Mailbox(FilesystemMailboxProvider(session_path))
     
-    mock_llm = MagicMock()
-    mock_llm.invoke.return_value = DecompositionResult(
+    mock_llm = AsyncMock()
+    mock_llm.ainvoke.return_value = DecompositionResult(
         thought_process="Decomposing for repo analysis.",
         sub_tasks=[SubAgentTask(agent_id="analyst_agent", role=AgentRole.WORKER, instructions="Index and query.")]
     )
 
-    generator = SystemGeneratorAgent(llm=None, workspace=workspace)
+    generator = SystemGeneratorAgent(llm=AsyncMock(), workspace=workspace)
     supervisor = SupervisorAgent(factory, mailbox, generator, llm=mock_llm)
     search_agent = SemanticSearchAgent(workspace)
 
@@ -46,16 +46,17 @@ def repo_env(tmp_path):
         "mailbox": mailbox, "mock_llm": mock_llm
     }
 
-def test_v3_repo_analysis_with_mocked_llm(repo_env):
+@pytest.mark.asyncio
+async def test_v3_repo_analysis_with_mocked_llm(repo_env):
     env = repo_env
     supervisor = env["supervisor"]
     search_agent = env["search_agent"]
     
     state = create_initial_state("super_01", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"))
     
-    decomp_state = supervisor.task_decomposition_node(state)
+    decomp_state = await supervisor.task_decomposition_node(state)
     assert "analyst_agent" in decomp_state["next_steps"]
-    env["mock_llm"].invoke.assert_called_once()
+    env["mock_llm"].ainvoke.assert_called_once()
 
     state.update(decomp_state)
     spawn_res = supervisor.spawning_node(state)

@@ -110,10 +110,10 @@ class AutonomousScheduler:
                     inbox_path, outbox_path, knowledge_path, todo_path
                 )
                 initial_state["messages"] = [{"role": "user", "content": str(inbox_msg.get("payload", {}))}]
-                graph.invoke(initial_state, config=config)
+                await graph.ainvoke(initial_state, config=config)
             else:
                 # Existing agent - resume
-                graph.invoke(None, config=config)
+                await graph.ainvoke(None, config=config)
             
             # 4. Cleanup Inbox
             for f in inbox_path.glob("*.json"):

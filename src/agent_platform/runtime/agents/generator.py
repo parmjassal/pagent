@@ -19,7 +19,7 @@ class SystemGeneratorAgent:
         self.llm = llm
         self.workspace = workspace
 
-    def generate_node(self, state: AgentState, task_type: TaskType = TaskType.PROMPT) -> Dict[str, Any]:
+    async def generate_node(self, state: AgentState, task_type: TaskType = TaskType.PROMPT) -> Dict[str, Any]:
         """LangGraph node to generate tailored output using session templates."""
         
         target_id = "unknown"
@@ -41,7 +41,7 @@ class SystemGeneratorAgent:
 
         # 2. Invoke LLM
         instruction = f"Target ID: {target_id}\nTask: {system_instruction}"
-        response = self.llm.invoke([SystemMessage(content=instruction)])
+        response = await self.llm.ainvoke([SystemMessage(content=instruction)])
         content = response.content if hasattr(response, "content") else str(response)
 
         log_msg = f"Generator: Created {task_type.value} for {target_id}"

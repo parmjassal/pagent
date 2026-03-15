@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from agent_platform.runtime.orch.state import create_initial_state, AgentRole
 from agent_platform.runtime.orch.quota import update_quota
 from agent_platform.runtime.agents.supervisor import SupervisorAgent
@@ -15,22 +15,24 @@ def v3_env(tmp_path):
     factory = AgentFactory(workspace)
     mailbox = Mailbox(FilesystemMailboxProvider(tmp_path / "sess"))
     
-    mock_llm = MagicMock()
-    mock_llm.invoke.return_value = DecompositionResult(
+    # MOCK LLM ASYNC
+    mock_llm = AsyncMock()
+    mock_llm.ainvoke.return_value = DecompositionResult(
         thought_process="Spawning sub-super",
         sub_tasks=[SubAgentTask(agent_id="sub_supervisor_01", role=AgentRole.SUPERVISOR, instructions="Task")]
     )
 
-    supervisor = SupervisorAgent(factory, mailbox, None, llm=mock_llm)
+    supervisor = SupervisorAgent(factory, mailbox, AsyncMock(), llm=mock_llm)
     return {"supervisor": supervisor, "workspace": workspace, "mailbox": mailbox}
 
-def test_sub_supervisor_spawning_flow(v3_env):
+@pytest.mark.asyncio
+async def test_sub_supervisor_spawning_flow(v3_env):
     env = v3_env
     supervisor = env["supervisor"]
     
     state = create_initial_state("top_super", "u1", "s1", Path("/tmp"), Path("/tmp"), role=AgentRole.SUPERVISOR)
     
-    decomp_res = supervisor.task_decomposition_node(state)
+    decomp_res = await supervisor.task_decomposition_node(state)
     state.update(decomp_res)
     
     assert state["metadata"]["next_agent_role"] == AgentRole.SUPERVISOR

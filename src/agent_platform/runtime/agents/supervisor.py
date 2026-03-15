@@ -52,8 +52,8 @@ class SupervisorAgent:
             return "generate_prompt"
         return END
 
-    def task_decomposition_node(self, state: AgentState) -> AgentState:
-        """Invokes the LLM to decompose the task and persists it to TODO."""
+    async def task_decomposition_node(self, state: AgentState) -> AgentState:
+        """Invokes the LLM to decompose the task using an external template."""
         
         template_path = state["inbox_path"].parent.parent.parent / "prompts" / "supervisor_decompose.txt"
         system_instruction = "You are a task decomposition supervisor."
@@ -65,7 +65,7 @@ class SupervisorAgent:
             *state["messages"]
         ]
         
-        result: DecompositionResult = self.llm.invoke(prompt)
+        result: DecompositionResult = await self.llm.ainvoke(prompt)
         
         # PERSIST TO TODO DIRECTORY
         todo_mgr = TODOManager(state["todo_path"].parent)
@@ -93,8 +93,8 @@ class SupervisorAgent:
             "node_counts": {"decompose": 1}
         }
 
-    def generate_prompt_node(self, state: AgentState) -> Dict[str, Any]:
-        return self.generator.generate_node(state, task_type=TaskType.PROMPT)
+    async def generate_prompt_node(self, state: AgentState) -> Dict[str, Any]:
+        return await self.generator.generate_node(state, task_type=TaskType.PROMPT)
 
     def spawning_node(self, state: AgentState) -> AgentState:
         if not state["next_steps"]:
