@@ -17,7 +17,7 @@ def configure_logging(log_file: Optional[Path] = None):
     # 1. Setup Standard Logging for the File
     if log_file:
         fh = logging.FileHandler(log_file)
-        fh.setLevel(logging.INFO)
+        fh.setLevel(logging.DEBUG)
         # JSON or Plaintext for file? Let's use Plaintext for human-readability in skeleton
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         fh.setFormatter(formatter)
@@ -47,3 +47,6 @@ def configure_logging(log_file: Optional[Path] = None):
     root_logger = logging.getLogger()
     root_logger.addHandler(console_handler)
     root_logger.setLevel(logging.INFO)
+
+    # Set agents package to DEBUG by default
+    logging.getLogger("agent_platform.runtime.agents").setLevel(logging.DEBUG)

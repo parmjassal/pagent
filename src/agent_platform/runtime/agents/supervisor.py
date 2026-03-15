@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage
+from langchain_core.output_parsers import JsonOutputParser
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from ..orch.state import AgentState, AgentRole
@@ -12,6 +13,9 @@ from ..orch.logic import LoopMonitor
 from ..core.http_client import get_platform_http_client
 from ..orch.models import DecompositionResult
 from ..core.mailbox import Mailbox
+
+import logging
+logger = logging.getLogger(__name__)
 
 class SupervisorAgent:
     """The primary orchestrator that decomposes tasks and spawns sub-agents."""
@@ -30,16 +34,21 @@ class SupervisorAgent:
         self.mailbox = mailbox
         self.generator = generator
         
+        # ALWAYS initialize the parser
+        self.parser = JsonOutputParser(pydantic_object=DecompositionResult)
+        
         if llm:
             self.llm = llm
         else:
             http_client = get_platform_http_client()
-            self.llm = ChatOpenAI(
+            self.base_llm = ChatOpenAI(
                 model=model_name,
                 openai_api_key=api_key,
                 openai_api_base=base_url,
-                http_client=http_client
-            ).with_structured_output(DecompositionResult)
+                http_client=http_client,
+                temperature=0 
+            )
+            self.llm = self.base_llm | self.parser
 
     def _should_continue(self, state: AgentState) -> str:
         """Centralized router with Role-Aware Loop Detection."""
@@ -60,12 +69,22 @@ class SupervisorAgent:
         if template_path.exists():
             system_instruction = template_path.read_text()
 
+        # Inject formatting instructions from the parser automatically
+        format_instructions = self.parser.get_format_instructions()
+        full_instruction = f"{system_instruction}\n\n{format_instructions}"
+
         prompt = [
-            SystemMessage(content=system_instruction),
+            SystemMessage(content=full_instruction),
             *state["messages"]
         ]
         
-        result: DecompositionResult = await self.llm.ainvoke(prompt)
+        logger.debug(f"Supervisor Decomposition Prompt: {full_instruction}")
+        
+        # This now uses the resilient chain
+        raw_result = await self.llm.ainvoke(prompt)
+        result = DecompositionResult.model_validate(raw_result)
+        
+        logger.debug(f"Supervisor Decomposition Result: {result.model_dump_json()}")
         
         # PERSIST TO TODO DIRECTORY
         todo_mgr = TODOManager(state["todo_path"].parent)
@@ -79,7 +98,6 @@ class SupervisorAgent:
             ))
             next_steps.append(task_def.agent_id)
         
-        # Prepare metadata for the next agent role (taking the first one)
         next_role = result.sub_tasks[0].role if result.sub_tasks else AgentRole.WORKER
         instructions = result.sub_tasks[0].instructions if result.sub_tasks else ""
 
