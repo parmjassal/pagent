@@ -13,5 +13,8 @@ Requires-Dist: pydantic>=2
 Requires-Dist: structlog
 Requires-Dist: typer
 Requires-Dist: pytest
+Requires-Dist: pytest-asyncio
 Requires-Dist: numpy
 Requires-Dist: scipy
+Requires-Dist: langgraph-checkpoint-sqlite
+Requires-Dist: aiosqlite

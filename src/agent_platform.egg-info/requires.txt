@@ -8,5 +8,8 @@ pydantic>=2
 structlog
 typer
 pytest
+pytest-asyncio
 numpy
 scipy
+langgraph-checkpoint-sqlite
+aiosqlite
