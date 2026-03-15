@@ -2,6 +2,7 @@ from typing import List, Dict, Any, Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from ..orch.state import AgentState, AgentRole
 from ..orch.quota import SessionQuota
 from ..core.agent_factory import AgentFactory
@@ -112,7 +113,7 @@ class SupervisorAgent:
     def abort_node(self, state: AgentState) -> Dict[str, Any]:
         return {"messages": [{"role": "system", "content": f"ABORTING: Loop detected for {state['role']} agent."}]}
 
-    def build_graph(self) -> StateGraph:
+    def build_graph(self, checkpointer: Optional[BaseCheckpointSaver] = None) -> Any:
         workflow = StateGraph(AgentState)
         workflow.add_node("decompose", self.task_decomposition_node)
         workflow.add_node("generate_prompt", self.generate_prompt_node)
@@ -123,4 +124,5 @@ class SupervisorAgent:
         workflow.add_edge("generate_prompt", "spawn")
         workflow.add_edge("spawn", END)
         workflow.add_edge("abort", END)
-        return workflow.compile()
+        
+        return workflow.compile(checkpointer=checkpointer)

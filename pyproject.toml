@@ -15,7 +15,8 @@ dependencies = [
     "typer",
     "pytest",
     "numpy",
-    "scipy"
+    "scipy",
+    "langgraph-checkpoint-sqlite"
 ]
 
 [tool.ruff]

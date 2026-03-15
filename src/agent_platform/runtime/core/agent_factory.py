@@ -11,6 +11,10 @@ class AgentFactory:
         self.workspace = workspace
         self.max_spawn_depth = max_spawn_depth
 
+    def get_agent_db_path(self, user_id: str, session_id: str, agent_id: str) -> Path:
+        """Returns the path to the agent's SQLite state database."""
+        return self.workspace.get_agent_dir(user_id, session_id, agent_id) / "state.db"
+
     def create_agent(
         self, 
         user_id: str, 
@@ -24,7 +28,6 @@ class AgentFactory:
     ) -> Optional[AgentState]:
         """
         Creates a new agent's directory structure and returns its initial state.
-        Returns None if quota limits or spawn depth limits are exceeded.
         """
         if not current_quota.can_spawn() or parent_depth >= self.max_spawn_depth:
             return None

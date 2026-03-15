@@ -9,7 +9,7 @@
 - [x] Mailbox Pointer Injection (for LangGraph units)
 - [x] **Hierarchical Knowledge Base:** Persistent fact sheets in `knowledge/`.
 - [ ] Session Snapshot Engine (DEFERRED)
-- [ ] **SQLite Checkpointer:** Real graph state persistence in `state.db`.
+- [x] **SQLite Checkpointer:** Real graph state persistence in `state.db`.
 - [ ] Persistent Runtime Loop (Service Mode / Scheduler)
 
 ## Dynamic Agent & Tool Orchestration
