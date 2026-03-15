@@ -58,31 +58,39 @@ class GuardrailManager:
         user_id = state["user_id"]
         context = {"agent_id": state["agent_id"], "depth": state["current_depth"]}
         action = f"{tool_name}({json.dumps(tool_args)})"
-        
+
+        # 1. Resolve Template (from session workspace)
+        session_path = state["inbox_path"].parent.parent.parent
+        template_path = session_path / "prompts" / "guardrail_policy.txt"
+        system_instruction = "Verify tool call safety."
+        if template_path.exists():
+            system_instruction = template_path.read_text()
+
         history = ""
         if state.get("messages"):
-            history = " ".join([m["content"] for m in state["messages"][-2:]])
+            history = " ".join([m["content"] for m in state["messages"][-3:]])
 
         key_data = {
             "user_id": user_id,
             "context": context,
             "action": action,
-            "history": history
+            "history": history,
+            "policy": system_instruction 
         }
 
-        # 1. Check Lookup (Cache)
+        # 2. Check Lookup (Cache)
         cached = self.lookup.get_decision(key_data)
         if cached:
             logger.info(f"Guardrail lookup hit for {action}")
             return cached
 
-        # 2. Invoke Policy Generator (Injected)
+        # 3. Invoke Policy Generator (Injected)
         if not self.policy_generator:
             return False, "Guardrail policy generator not configured."
 
         is_allowed, reason = self.policy_generator.generate(tool_name, tool_args)
 
-        # 3. Store Result
+        # 4. Store Result
         self.lookup.store_decision(key_data, (is_allowed, reason))
         return is_allowed, reason
 

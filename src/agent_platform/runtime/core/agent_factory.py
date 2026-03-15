@@ -32,17 +32,15 @@ class AgentFactory:
         if not current_quota.can_spawn() or parent_depth >= self.max_spawn_depth:
             return None
 
-        # 1. Resolve paths
-        agent_dir = self.workspace.get_agent_dir(user_id, session_id, agent_id)
+        # 1. Initialize Agent-level directory structure
+        agent_dir = self.workspace.ensure_agent_structure(user_id, session_id, agent_id)
+        
+        # 2. Resolve paths for state initialization
         inbox_path = agent_dir / "inbox"
         outbox_path = agent_dir / "outbox"
+        todo_path = agent_dir / "todo"
         session_dir = self.workspace.get_session_dir(user_id, session_id)
         knowledge_path = session_dir / "knowledge"
-        todo_path = session_dir / "todo"
-
-        # 2. Ensure directories exist
-        inbox_path.mkdir(parents=True, exist_ok=True)
-        outbox_path.mkdir(parents=True, exist_ok=True)
 
         # 3. Initialize state
         state = create_initial_state(

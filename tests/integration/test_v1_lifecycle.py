@@ -8,7 +8,8 @@ from agent_platform.runtime.orch.state import create_initial_state
 from agent_platform.runtime.agents.generator import SystemGeneratorAgent, TaskType
 from agent_platform.runtime.agents.validator import SystemValidatorAgent
 from agent_platform.runtime.agents.supervisor import SupervisorAgent
-from agent_platform.runtime.core.dispatcher import ToolDispatcher, ToolRegistry, ToolSource
+from agent_platform.runtime.core.dispatcher import ToolDispatcher, ToolRegistry
+from agent_platform.runtime.core.schema import ToolSource
 from agent_platform.runtime.core.guardrails import GuardrailManager, PolicyGenerator
 from agent_platform.runtime.core.sandbox import ProcessSandboxRunner
 from agent_platform.runtime.orch.models import DecompositionResult, SubAgentTask, ValidationResult

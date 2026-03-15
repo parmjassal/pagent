@@ -1,5 +1,6 @@
 import pytest
 import aiosqlite
+import sqlite3
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -54,7 +55,6 @@ async def test_v5_graph_persistence_and_resume(persistence_env):
     # USE ASYNC SQLITE
     async with aiosqlite.connect(db_path) as conn:
         checkpointer = AsyncSqliteSaver(conn)
-        # Initialize checkpointer
         await checkpointer.setup()
         
         supervisor = SupervisorAgent(env["factory"], env["mailbox"], env["generator"], llm=env["mock_llm"])
