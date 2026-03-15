@@ -18,9 +18,16 @@ from agent_platform.runtime.core.mailbox import Mailbox, FilesystemMailboxProvid
 def v1_env(tmp_path):
     root = tmp_path / ".pagent"
     workspace = WorkspaceContext(root=root)
-    (workspace.get_global_dir() / "prompts").mkdir(parents=True)
-    (workspace.get_global_dir() / "guidelines.md").write_text("Safety First")
+    
+    # 1. SETUP PROJECT GLOBAL RESOURCES (Mocking the data/ dir)
+    project_root = Path(__file__).parent.parent.parent
+    global_res_dir = project_root / "data" / "pagent_resources" / "global"
+    global_res_dir.mkdir(parents=True, exist_ok=True)
+    (global_res_dir / "prompts").mkdir(exist_ok=True)
+    (global_res_dir / "prompts" / "generator_prompt.txt").write_text("MOCK GENERATOR TEMPLATE")
+    (global_res_dir / "guidelines.md").write_text("Safety First")
 
+    # 2. SESSION SETUP
     res_mgr = SimpleCopyResourceManager()
     initializer = SessionInitializer(workspace, res_mgr)
     user_id, session_id = "power_user", "sess_v1"
@@ -67,6 +74,11 @@ def test_v1_full_platform_lifecycle_with_mocks(v1_env):
     supervisor = v1_env["supervisor"]
     dispatcher = v1_env["dispatcher"]
     validator = v1_env["validator"]
+
+    # --- VERIFY TEMPLATE LOAD ---
+    # Ensure guidelines were COPIED into the session
+    assert (session_path / "guidelines.md").exists()
+    assert (session_path / "prompts" / "generator_prompt.txt").exists()
 
     state = create_initial_state("super_01", user_id, session_id, Path("/tmp"), Path("/tmp"))
     graph = supervisor.build_graph()

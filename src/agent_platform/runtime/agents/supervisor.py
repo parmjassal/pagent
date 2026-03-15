@@ -41,7 +41,6 @@ class SupervisorAgent:
             ).with_structured_output(DecompositionResult)
 
     def _should_continue(self, state: AgentState) -> str:
-        """Centralized router with Role-Aware Loop Detection."""
         node_threshold = 3 if state["role"] == AgentRole.SUPERVISOR else 10
         if LoopMonitor.check_node_loop(state, "decompose", threshold=node_threshold):
             return "abort"
@@ -52,11 +51,19 @@ class SupervisorAgent:
         return END
 
     def task_decomposition_node(self, state: AgentState) -> AgentState:
-        """Invokes the LLM to decompose the task into sub-agents."""
+        """Invokes the LLM to decompose the task using an external template."""
+        
+        # 1. Resolve Template from Session
+        template_path = state["inbox_path"].parent.parent.parent / "prompts" / "supervisor_decompose.txt"
+        system_instruction = "You are a task decomposition supervisor."
+        if template_path.exists():
+            system_instruction = template_path.read_text()
+
         prompt = [
-            SystemMessage(content="You are a task decomposition supervisor. Analyze the user request and identify sub-agents to spawn."),
+            SystemMessage(content=system_instruction),
             *state["messages"]
         ]
+        
         result: DecompositionResult = self.llm.invoke(prompt)
         next_steps = [task.agent_id for task in result.sub_tasks]
         next_role = result.sub_tasks[0].role if result.sub_tasks else AgentRole.WORKER

@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class SystemValidatorAgent:
     """
     Generic System Agent responsible for validating generated code or prompts 
-    against session guidelines.
+    using external session templates.
     """
 
     def __init__(self, llm: Optional[Any] = None, workspace: Optional[WorkspaceContext] = None):
@@ -25,16 +25,22 @@ class SystemValidatorAgent:
         if not generated_content:
             return {"messages": [{"role": "system", "content": "Validator: No content."}], "is_valid": True}
 
-        # 1. Resolve Guidelines
-        guidelines = "Use professional tone and ensure safety."
-        if self.workspace:
-            session_path = self.workspace.get_session_dir(state["user_id"], state["session_id"])
-            guidelines_path = session_path / "guidelines.md"
-            if guidelines_path.exists():
-                guidelines = guidelines_path.read_text()
+        # 1. Resolve Template from Session
+        session_path = state["inbox_path"].parent.parent.parent
+        template_path = session_path / "prompts" / "validator_check.txt"
+        
+        system_instruction = "You are a Security and Quality Auditor."
+        if template_path.exists():
+            system_instruction = template_path.read_text()
 
-        # 2. Invoke LLM (Mocked or Real)
-        instruction = f"Validate this content against these guidelines:\n\nContent: {generated_content}\n\nGuidelines: {guidelines}"
+        # 2. Resolve Session Guidelines
+        guidelines = "Use professional tone and ensure safety."
+        guidelines_path = session_path / "guidelines.md"
+        if guidelines_path.exists():
+            guidelines = guidelines_path.read_text()
+
+        # 3. Invoke LLM
+        instruction = f"{system_instruction}\n\nValidate this content against these guidelines:\n\nContent: {generated_content}\n\nGuidelines: {guidelines}"
         result: ValidationResult = self.llm.invoke([SystemMessage(content=instruction)])
 
         log_msg = f"Validator: is_valid={result.is_valid}, reason='{result.reasoning}'"

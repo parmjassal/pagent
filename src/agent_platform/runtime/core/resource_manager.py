@@ -35,18 +35,19 @@ class SessionInitializer:
         # 1. Create directory structure
         session_path = self.workspace.ensure_session_structure(user_id, session_id)
 
-        # 2. Inherit/Copy Resources (Global -> User -> Session)
-        # This order allows user overrides of global, and session is hydrated with the result.
-        global_dir = self.workspace.get_global_dir()
+        # 2. Resolve Global Resources from project data
+        project_root = Path(__file__).parent.parent.parent.parent.parent # Resolve to project root
+        global_resource_dir = project_root / "data" / "pagent_resources" / "global"
+        
         user_dir = self.workspace.get_user_dir(user_id)
 
         # Copy Global to Session
-        self.resource_manager.copy_resources(global_dir / "skills", session_path / "skills")
-        self.resource_manager.copy_resources(global_dir / "prompts", session_path / "prompts")
+        self.resource_manager.copy_resources(global_resource_dir / "skills", session_path / "skills")
+        self.resource_manager.copy_resources(global_resource_dir / "prompts", session_path / "prompts")
         
         # Explicitly copy guidelines if present
-        if (global_dir / "guidelines.md").exists():
-            shutil.copy2(global_dir / "guidelines.md", session_path / "guidelines.md")
+        if (global_resource_dir / "guidelines.md").exists():
+            shutil.copy2(global_resource_dir / "guidelines.md", session_path / "guidelines.md")
 
         # Copy User specific (overriding global if collision)
         self.resource_manager.copy_resources(user_dir / "skills", session_path / "skills")
