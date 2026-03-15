@@ -1,4 +1,5 @@
 from typing import List, Dict, Any, Optional
+import logging
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage
 from langchain_core.output_parsers import JsonOutputParser
@@ -14,7 +15,6 @@ from ..core.http_client import get_platform_http_client
 from ..orch.models import DecompositionResult
 from ..core.mailbox import Mailbox
 
-import logging
 logger = logging.getLogger(__name__)
 
 class SupervisorAgent:
@@ -28,13 +28,14 @@ class SupervisorAgent:
         model_name: str = "gpt-4o", 
         api_key: Optional[str] = None, 
         base_url: Optional[str] = None,
-        llm: Optional[Any] = None
+        llm: Optional[Any] = None,
+        unit_compiler: Optional[Any] = None # New: Recursive compiler
     ):
         self.agent_factory = agent_factory
         self.mailbox = mailbox
         self.generator = generator
+        self.unit_compiler = unit_compiler
         
-        # ALWAYS initialize the parser
         self.parser = JsonOutputParser(pydantic_object=DecompositionResult)
         
         if llm:
@@ -63,13 +64,11 @@ class SupervisorAgent:
 
     async def task_decomposition_node(self, state: AgentState) -> AgentState:
         """Invokes the LLM to decompose the task using an external template."""
-        
         template_path = state["inbox_path"].parent.parent.parent / "prompts" / "supervisor_decompose.txt"
         system_instruction = "You are a task decomposition supervisor."
         if template_path.exists():
             system_instruction = template_path.read_text()
 
-        # Inject formatting instructions from the parser automatically
         format_instructions = self.parser.get_format_instructions()
         full_instruction = f"{system_instruction}\n\n{format_instructions}"
 
@@ -78,19 +77,14 @@ class SupervisorAgent:
             *state["messages"]
         ]
         
-        logger.debug(f"Supervisor Decomposition Prompt: {full_instruction}")
-        
-        # This now uses the resilient chain
         raw_result = await self.llm.ainvoke(prompt)
         result = DecompositionResult.model_validate(raw_result)
-        
-        logger.debug(f"Supervisor Decomposition Result: {result.model_dump_json()}")
         
         # PERSIST TO TODO DIRECTORY
         todo_mgr = TODOManager(state["todo_path"].parent)
         next_steps = []
         for task_def in result.sub_tasks:
-            task_id = todo_mgr.add_task(ScopedTask(
+            todo_mgr.add_task(ScopedTask(
                 title=f"Task for {task_def.agent_id}",
                 description=task_def.instructions,
                 assigned_to=task_def.agent_id,
@@ -114,7 +108,11 @@ class SupervisorAgent:
     async def generate_prompt_node(self, state: AgentState) -> Dict[str, Any]:
         return await self.generator.generate_node(state, task_type=TaskType.PROMPT)
 
-    def spawning_node(self, state: AgentState) -> AgentState:
+    async def spawning_node(self, state: AgentState) -> AgentState:
+        """
+        [WAIT & MERGE]
+        Recursively triggers a sub-unit graph and merges only the final result.
+        """
         if not state["next_steps"]:
             return state
 
@@ -122,6 +120,7 @@ class SupervisorAgent:
         prompt = state.get("generated_output")
         next_role = state.get("metadata", {}).get("next_agent_role", AgentRole.WORKER)
 
+        # 1. Initialize sub-agent context (Factory)
         new_agent_state = self.agent_factory.create_agent(
             user_id=state["user_id"],
             session_id=state["session_id"],
@@ -135,6 +134,27 @@ class SupervisorAgent:
         if not new_agent_state:
             return {"messages": [{"role": "system", "content": f"Failed to spawn {sub_agent_id}"}]}
         
+        # 2. Compile and Invoke Sub-graph (Unified Thread)
+        if self.unit_compiler:
+            logger.info(f"Supervisor {state['agent_id']} AWAITING subgraph: {sub_agent_id}")
+            sub_graph = self.unit_compiler.compile_unit(role=next_role)
+            
+            # Pass full state, but override agent_id and role for the sub-graph
+            sub_input = {**state, **new_agent_state}
+            
+            # Recurse: ainvoke the compiled subgraph
+            sub_result_state = await sub_graph.ainvoke(sub_input)
+            
+            # 3. RESULT MERGE: Only pull final_result back to parent
+            final_res = sub_result_state.get("final_result", {"content": "Sub-task finished."})
+            
+            return {
+                "quota": sub_result_state["quota"], # Quota must bubble up
+                "messages": [{"role": "system", "content": f"Sub-agent {sub_agent_id} returned: {final_res}"}],
+                "next_steps": state["next_steps"][1:] # Clear current, keep others
+            }
+        
+        # Fallback to Mailbox if no compiler (Legacy mode)
         self.mailbox.send(sub_agent_id, {
             "id": f"task_{state['agent_id']}",
             "sender": state["agent_id"],
@@ -145,8 +165,8 @@ class SupervisorAgent:
 
         return {
             "quota": SessionQuota(agent_count=1),
-            "messages": [{"role": "system", "content": f"Successfully spawned {next_role.value}: {sub_agent_id}"}],
-            "next_steps": [] 
+            "messages": [{"role": "system", "content": f"Spawned {sub_agent_id} via Mailbox."}],
+            "next_steps": state["next_steps"][1:] 
         }
 
     def abort_node(self, state: AgentState) -> Dict[str, Any]:
@@ -161,7 +181,7 @@ class SupervisorAgent:
         workflow.set_entry_point("decompose")
         workflow.add_conditional_edges("decompose", self._should_continue, {"generate_prompt": "generate_prompt", "abort": "abort", END: END})
         workflow.add_edge("generate_prompt", "spawn")
-        workflow.add_edge("spawn", END)
+        workflow.add_edge("spawn", "decompose") # Recursive loop back to decompose
         workflow.add_edge("abort", END)
         
         return workflow.compile(checkpointer=checkpointer)
