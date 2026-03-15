@@ -13,13 +13,15 @@ console = Console()
 
 @app.command()
 def serve(
+    task: Optional[str] = typer.Argument(None, help="The initial task for the agent platform to execute."),
     user_id: Optional[str] = typer.Option(None, help="The ID of the user. Defaults to current process user."),
     session_id: Optional[str] = typer.Option(None, help="The session ID to resume."),
     openai_base_url: Optional[str] = typer.Option(None, envvar="OPENAI_BASE_URL", help="Custom OpenAI endpoint."),
     model_name: str = typer.Option("gpt-4o", envvar="AGENT_MODEL_NAME", help="The LLM model name to use.")
 ):
     """
-    Starts the pagent runtime with a real-time visualization of the orchestration tree.
+    Starts the pagent runtime. 
+    If a TASK is provided, it initializes the session with that objective.
     """
     if not user_id:
         user_id = getpass.getuser()
@@ -37,15 +39,21 @@ def serve(
     infra = tree.add("Infrastructure")
     infra.add(f"User: [green]{user_id}[/green]")
     infra.add(f"Model: [blue]{model_name}[/blue]")
-    infra.add("Mailbox: [blue]Listening...[/blue]")
+    
+    if task:
+        infra.add(f"Initial Task: [yellow]{task}[/yellow]")
     
     agents = tree.add("Agent Tree")
-    agents.add("[dim italic]Waiting for task decomposition...[/dim italic]")
+    if task:
+        agents.add("[bold green]Starting supervisor for initial task...[/bold green]")
+    else:
+        agents.add("[dim italic]Waiting for task decomposition...[/dim italic]")
 
     # 3. Live Display
     console.print(Panel.fit("[bold blue]pagent[/bold blue] - Multi-Agent Runtime", border_style="blue"))
     
     with Live(tree, console=console, refresh_per_second=4):
+        # Here, the Scheduler would pick up the task and start the Supervisor
         try:
             while True:
                 time.sleep(1)

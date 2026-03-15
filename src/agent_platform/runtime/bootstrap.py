@@ -2,11 +2,13 @@ import structlog
 import uuid
 import os
 from typing import Optional
+from pathlib import Path
 from ..logging_config import configure_logging
 from .core.workspace import WorkspaceContext
 from .core.resource_manager import SimpleCopyResourceManager, SessionInitializer
 from .core.agent_factory import AgentFactory
 from .core.lifecycle import AgentLifecycleManager
+from .core.mailbox import Mailbox, FilesystemMailboxProvider
 
 log = structlog.get_logger()
 
@@ -14,7 +16,8 @@ def start_runtime(
     user_id: str, 
     session_id: Optional[str] = None,
     openai_base_url: Optional[str] = None,
-    model_name: str = "gpt-4o"
+    model_name: str = "gpt-4o",
+    task: Optional[str] = None
 ):
     """
     Bootstraps the platform for a specific user and session.
@@ -53,6 +56,15 @@ def start_runtime(
     factory = AgentFactory(workspace)
     lifecycle = AgentLifecycleManager(workspace, factory)
     
-    # The model_name would be passed to agent initializers in the Scheduler/Service loop
+    # 5. Handle Initial Task (Injection)
+    if task:
+        log.info("injecting_initial_task", task=task)
+        mailbox = Mailbox(FilesystemMailboxProvider(session_path))
+        # Initial task always goes to the 'supervisor' agent
+        mailbox.send("supervisor", {
+            "id": "init_task",
+            "sender": "user",
+            "payload": {"task": task}
+        })
     
     return session_id

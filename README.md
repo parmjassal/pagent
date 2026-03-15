@@ -44,11 +44,15 @@ source .vcli/bin/activate
 ## 📖 How to Use
 
 ### Starting the Platform
-Launch the runtime for the current system user:
+Launch the runtime and provide an optional initial task:
 ```bash
-export AGENT_WORKSPACE_ROOT=~/.pagent
-export OPENAI_API_KEY=your_key_here
-python -m agent_platform.cli
+python -m agent_platform.cli "Analyze the local project for security flaws"
+```
+
+### Configuration Options
+You can configure user, session, and model via flags:
+```bash
+python -m agent_platform.cli --user-id "dev_user" --model-name "gpt-4-turbo"
 ```
 
 ### Resume an Existing Session
