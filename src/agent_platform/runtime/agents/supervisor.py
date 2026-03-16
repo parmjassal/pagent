@@ -2,6 +2,7 @@ import logging
 import json
 from typing import Dict, Any, List, Optional
 from langchain_core.messages import SystemMessage, HumanMessage, BaseMessage
+from langchain_core.output_parsers import JsonOutputParser
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
@@ -33,6 +34,7 @@ class SupervisorAgent:
         self.generator = generator
         self.llm = llm
         self.unit_compiler = unit_compiler
+        self.parser = JsonOutputParser(pydantic_object=PlanningResult)
 
     async def planning_node(self, state: AgentState) -> AgentState:
         """Determines the execution strategy based on current state."""
@@ -59,12 +61,16 @@ class SupervisorAgent:
         
         try:
             response = await self.llm.ainvoke(prompt)
-            # Handle both raw LLM and parsed Pydantic
+            
+            # Robust Parsing
             if hasattr(response, "strategy"):
                 result = response
+            elif hasattr(response, "content"):
+                # Handle AIMessage
+                parsed = self.parser.parse(response.content)
+                result = PlanningResult.model_validate(parsed)
             else:
-                # If the LLM didn't return a Pydantic object, we might need to parse it
-                # For now assume the injected LLM is structured
+                # Fallback for dicts
                 result = PlanningResult.model_validate(response)
         except Exception as e:
             logger.error(f"Planning failed: {e}")

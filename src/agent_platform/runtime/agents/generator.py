@@ -69,11 +69,17 @@ class SystemGeneratorAgent:
         # Resolve Task Context from metadata
         task_context = state.get("metadata", {}).get("current_task_instructions", "No specific instructions provided.")
 
-        # 2. Invoke LLM
-        instruction = f"Target Agent ID: {target_id}\nTarget Task Description: {task_context}\n\nSystem Guidelines:\n{system_instruction}"
-        logger.debug(f"Generator Input ({task_type.value}): {instruction}")
+        # 2. Invoke LLM with structured messages
+        # System Message contains the "How to Generate"
+        # Human Message contains the "What to Generate For"
+        human_data = f"Target Agent ID: {target_id}\nTarget Task Description: {task_context}"
         
-        response = await self.llm.ainvoke([SystemMessage(content=instruction)])
+        logger.debug(f"Generator Input ({task_type.value}): {human_data}")
+        
+        response = await self.llm.ainvoke([
+            SystemMessage(content=system_instruction),
+            HumanMessage(content=human_data)
+        ])
         content = response.content if hasattr(response, "content") else str(response)
 
         logger.debug(f"Generator Output ({task_type.value}): {content}")

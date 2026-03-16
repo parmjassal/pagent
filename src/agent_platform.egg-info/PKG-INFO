@@ -18,3 +18,4 @@ Requires-Dist: numpy
 Requires-Dist: scipy
 Requires-Dist: langgraph-checkpoint-sqlite
 Requires-Dist: aiosqlite
+Requires-Dist: langchain-community

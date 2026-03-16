@@ -59,7 +59,6 @@ class WorkerAgent:
     async def reasoning_node(self, state: AgentState) -> AgentState:
         """Invokes the LLM to decide on a tool-use or finish strategy."""
         
-        # In a real system, we'd load a specific prompt template here
         system_instruction = "You are a specialized worker agent. Use tools to complete your task."
         format_instructions = self.parser.get_format_instructions()
         full_instruction = f"{system_instruction}\n\n{format_instructions}"
@@ -69,8 +68,20 @@ class WorkerAgent:
             *state["messages"]
         ]
         
-        raw_result = await self.llm.ainvoke(prompt)
-        result = WorkerResult.model_validate(raw_result)
+        response = await self.llm.ainvoke(prompt)
+        
+        # Robust Parsing
+        if hasattr(response, "content"):
+            # If it's an AIMessage, parse the content string
+            try:
+                parsed = self.parser.parse(response.content)
+                result = WorkerResult.model_validate(parsed)
+            except Exception as e:
+                logger.error(f"Worker failed to parse JSON: {response.content}")
+                return {"messages": [{"role": "system", "content": f"Parse Error: {e}"}], "metadata": {"strategy": ExecutionStrategy.FINISH}}
+        else:
+            # Already a dict or object
+            result = WorkerResult.model_validate(response)
         
         metadata_update = {
             "strategy": result.strategy,

@@ -13,3 +13,4 @@ numpy
 scipy
 langgraph-checkpoint-sqlite
 aiosqlite
+langchain-community
