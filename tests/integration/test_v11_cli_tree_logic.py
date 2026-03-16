@@ -22,12 +22,41 @@ def cli_test_env(tmp_path):
     #     └── sub_worker_2
     
     workspace.ensure_agent_structure(user_id, session_id, "super")
-    workspace.ensure_agent_structure(user_id, session_id, "super/worker_1")
-    workspace.ensure_agent_structure(user_id, session_id, "super/worker_1/sub_worker_2")
-    
-    # 2. Add some "Responded" state to worker_1
-    outbox_path = session_path / "agents" / "super" / "worker_1" / "outbox"
-    (outbox_path / "result.json").write_text('{"status": "done"}')
+    workspace.ensure_agent_structure(user_id, session_id, "worker_1")
+    workspace.ensure_agent_structure(user_id, session_id, "sub_worker_2")
+
+    # Create todo files for agents to define tasks and hierarchy
+    super_todo_path = session_path / "agents" / "super" / "todo"
+    worker_1_todo_path = session_path / "agents" / "worker_1" / "todo"
+    sub_worker_2_todo_path = session_path / "agents" / "sub_worker_2" / "todo"
+
+    super_todo_path.mkdir(parents=True, exist_ok=True)
+    worker_1_todo_path.mkdir(parents=True, exist_ok=True)
+    sub_worker_2_todo_path.mkdir(parents=True, exist_ok=True)
+
+    # super agent tasks
+    (super_todo_path / "task_1.json").write_text(
+        '{"description": "Initial planning phase", "status": "completed", "assigned_to": null}'
+    )
+    (super_todo_path / "task_2.json").write_text(
+        '{"description": "Delegate to worker 1", "status": "in_progress", "assigned_to": "worker_1"}'
+    )
+
+    # worker_1 agent tasks
+    (worker_1_todo_path / "task_a.json").write_text(
+        '{"description": "Execute sub-plan A", "status": "completed", "assigned_to": null}'
+    )
+    (worker_1_todo_path / "task_b.json").write_text(
+        '{"description": "Coordinate with sub_worker 2", "status": "in_progress", "assigned_to": "sub_worker_2"}'
+    )
+    (worker_1_todo_path / "task_c.json").write_text(
+        '{"description": "Final review", "status": "pending", "assigned_to": null}'
+    )
+
+    # sub_worker_2 agent tasks
+    (sub_worker_2_todo_path / "task_x.json").write_text(
+        '{"description": "Perform task X", "status": "in_progress", "assigned_to": null}'
+    )
 
     return {
         "user_id": user_id, 
@@ -59,26 +88,46 @@ def test_v11_build_dynamic_tree_filesystem_sync(cli_test_env):
     
     output = capture.get()
     
-    # 1. Assert Infrastructure is present
-    assert "Infrastructure" in output
-    assert "ui_tester" in output
-    assert "gpt-4o" in output
+    # 1. Assert Infrastructure is present and correctly formatted
+    assert "🔌 Infrastructure" in output
+    assert "👤 User: ui_tester" in output
+    assert "🧠 Model: gpt-4o" in output
+    assert "🎯 Initial Task: Test Task..." in output
     
     # 2. Assert Agent Hierarchy is present and correctly identified
-    assert "Agent Tree" in output
-    assert "Agent: super" in output
-    assert "Agent: worker_1" in output
-    assert "Agent: sub_worker_2" in output
+    assert "🤖 Agent & Task Tree" in output
+    assert "👑 Root Agent: super" in output
     
-    # 3. Assert status logic works
-    # worker_1 has a file in its outbox, so it should be "Responded"
-    assert "worker_1 (Responded)" in output
-    # others should be "Active"
-    assert "super (Active)" in output
-    assert "sub_worker_2 (Active)" in output
+    # 3. Assert specific tasks and delegations
+    # Super agent's tasks
+    assert "📝 Task: Initial planning phase (completed)" in output
+    assert "🤖 Agent: worker_1 - Goal: Delegate to worker 1 (in_progress)" in output
+    
+    # worker_1's tasks (delegated by super)
+    assert "📝 Task: Execute sub-plan A (completed)" in output
+    assert "🤖 Agent: sub_worker_2 - Goal: Coordinate with sub_worker 2 (in_progress)" in output
+    assert "📝 Task: Final review (pending)" in output
+    
+    # sub_worker_2's tasks (delegated by worker_1)
+    assert "📝 Task: Perform task X (in_progress)" in output
 
-    # 4. Verify visual hierarchy (crude string check)
-    # sub_worker_2 should appear AFTER worker_1
-    worker_idx = output.find("worker_1")
-    sub_worker_idx = output.find("sub_worker_2")
-    assert worker_idx < sub_worker_idx
+    # 4. Verify visual hierarchy (using careful string matching and order)
+    # The output string has line breaks, so we can check nesting visually
+    
+    # super -> Delegate to worker 1 (worker_1)
+    super_agent_line = output.find("👑 Root Agent: super")
+    delegate_to_worker_1_line = output.find("🤖 Agent: worker_1 - Goal: Delegate to worker 1 (in_progress)")
+    assert super_agent_line < delegate_to_worker_1_line
+    
+    # worker_1 -> Coordinate with sub_worker 2 (sub_worker_2)
+    worker_1_agent_line = output.find("🤖 Agent: worker_1 - Goal: Delegate to worker 1 (in_progress)") # This is the parent node for worker_1
+    coordinate_sub_worker_2_line = output.find("🤖 Agent: sub_worker_2 - Goal: Coordinate with sub_worker 2 (in_progress)")
+    assert worker_1_agent_line < coordinate_sub_worker_2_line
+    
+    # The tasks for worker_1 should be indented under it
+    execute_sub_plan_A_line = output.find("📝 Task: Execute sub-plan A (completed)")
+    assert worker_1_agent_line < execute_sub_plan_A_line and execute_sub_plan_A_line < coordinate_sub_worker_2_line # crude check
+
+    # The tasks for sub_worker_2 should be indented under it
+    perform_task_X_line = output.find("📝 Task: Perform task X (in_progress)")
+    assert coordinate_sub_worker_2_line < perform_task_X_line

@@ -15,45 +15,92 @@ from .runtime.core.workspace import WorkspaceContext
 app = typer.Typer()
 console = Console()
 
+import json
+
 def build_dynamic_tree(session_id: str, user_id: str, model_name: str, task: Optional[str], session_path: Path) -> Tree:
-    """Recursively builds a tree representing the current session and agents."""
-    tree = Tree(f"[bold cyan]Session: {session_id}[/bold cyan]")
+    """Recursively builds a tree representing the current session, agents, and their tasks."""
+    tree = Tree(f"🌳 [bold cyan]Session: {session_id}[/bold cyan]")
     
     # 1. Infrastructure Info
-    infra = tree.add("Infrastructure")
-    infra.add(f"User: [green]{user_id}[/green]")
-    infra.add(f"Model: [blue]{model_name}[/blue]")
+    infra = tree.add("🔌 [bold]Infrastructure[/bold]")
+    infra.add(f"👤 User: [green]{user_id}[/green]")
+    infra.add(f"🧠 Model: [blue]{model_name}[/blue]")
     if task:
-        infra.add(f"Task: [dim]{task[:50]}...[/dim]")
+        infra.add(f"🎯 Initial Task: [dim]{task[:70]}...[/dim]")
 
-    # 2. Agent Hierarchy (Discovered from Filesystem)
+    # 2. Agent Hierarchy
     agents_root = session_path / "agents"
-    agents_tree = tree.add("[bold magenta]Agent Tree[/bold magenta]")
+    agents_tree = tree.add("🤖 [bold magenta]Agent & Task Tree[/bold magenta]")
     
-    if not agents_root.exists():
-        agents_tree.add("[dim]Initializing...[/dim]")
+    if not agents_root.exists() or not any(agents_root.iterdir()):
+        agents_tree.add("[dim]Initializing or no agents created yet...[/dim]")
         return tree
 
-    # Map to keep track of added nodes to prevent duplicates in recursive walk
-    nodes = {agents_root: agents_tree}
+    # --- Data Collection Pass ---
+    agents_data = {}
+    child_to_parent_map = {}
 
-    # Walk the directory tree to find agents
-    # We look for directories that contain a 'todo' or 'inbox' to identify them as agents
-    for root, dirs, files in os.walk(agents_root):
-        root_path = Path(root)
+    agent_dirs = [d for d in agents_root.iterdir() if d.is_dir()]
+    for agent_dir in agent_dirs:
+        agent_name = agent_dir.name
+        agents_data[agent_name] = {'path': agent_dir, 'todos': []}
         
-        # If this is an agent directory
-        if (root_path / "todo").exists() or (root_path / "inbox").exists():
-            parent_path = root_path.parent
-            parent_node = nodes.get(parent_path, agents_tree)
+        todo_dir = agent_dir / "todo"
+        if todo_dir.exists():
+            for todo_file in sorted(todo_dir.glob("*.json")):
+                try:
+                    with open(todo_file, 'r') as f:
+                        todo_data = json.load(f)
+                        agents_data[agent_name]['todos'].append(todo_data)
+                        if todo_data.get('assigned_to'):
+                            child_to_parent_map[todo_data['assigned_to']] = agent_name
+                except (json.JSONDecodeError, IOError):
+                    continue # Ignore corrupted or unreadable files
+
+    # --- Tree Building Pass ---
+    def get_status_style(status: Optional[str]) -> str:
+        status_str = f"({status})" if status else ""
+        if status == 'completed':
+            return f"[green]{status_str}[/green]"
+        if status in ['in_progress', 'running']:
+            return f"[yellow]{status_str}[/yellow]"
+        if status == 'pending':
+            return f"[dim]{status_str}[/dim]"
+        return f"[dim]{status_str}[/dim]"
+
+    def _build_subtree(parent_node: Tree, agent_name: str):
+        if agent_name not in agents_data:
+            parent_node.add(f"⚠️ [bold red]Error:[/bold red] Agent '{agent_name}' defined but not found.")
+            return
+
+        agent_info = agents_data[agent_name]
+        for todo in agent_info['todos']:
+            status_style = get_status_style(todo.get('status'))
+            description = todo.get('description', 'No description').replace('[', '(').replace(']', ')')
             
-            # Extract status from metadata if possible (simplified for now)
-            status = "[green]Active[/green]"
-            if (root_path / "outbox").exists() and any((root_path / "outbox").glob("*.json")):
-                status = "[blue]Responded[/blue]"
-            
-            agent_node = parent_node.add(f"Agent: [bold yellow]{root_path.name}[/bold yellow] ({status})")
-            nodes[root_path] = agent_node
+            assigned_agent = todo.get('assigned_to')
+            if assigned_agent:
+                # This todo represents spawning a sub-agent
+                sub_agent_node = parent_node.add(f"🤖 [bold yellow]Agent: {assigned_agent}[/bold yellow] - Goal: {description} {status_style}")
+                _build_subtree(sub_agent_node, assigned_agent)
+            else:
+                # This is a regular task for the current agent
+                parent_node.add(f"📝 Task: {description} {status_style}")
+
+    # Find the root agent(s) (those not in the child_map)
+    root_agents = [name for name in agents_data if name not in child_to_parent_map]
+    
+    if not root_agents and agents_data:
+         # Handle cases with loops or if all agents are children
+        root_agents = list(agents_data.keys())
+
+
+    for root_agent_name in root_agents:
+        root_node = agents_tree.add(f"👑 [bold yellow]Root Agent: {root_agent_name}[/bold yellow]")
+        _build_subtree(root_node, root_agent_name)
+    
+    if not agents_data:
+        agents_tree.add("[dim]No agents found.[/dim]")
 
     return tree
 
@@ -90,7 +137,7 @@ async def run_platform(
     # 3. Dynamic UI Loop
     console.print(Panel.fit("[bold blue]pagent[/bold blue] - Multi-Agent Runtime", border_style="blue"))
     
-    with Live(refresh_per_second=2) as live:
+    with Live(refresh_per_second=2, screen=True) as live:
         try:
             while not scheduler_task.done():
                 # Rebuild tree from current filesystem state
