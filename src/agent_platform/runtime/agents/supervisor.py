@@ -29,7 +29,8 @@ class SupervisorAgent:
         generator: SystemGeneratorAgent,
         llm: Any,
         context_store: Optional[ContextStore] = None,
-        unit_compiler: Optional[Any] = None # For recursive execution
+        unit_compiler: Optional[Any] = None, # For recursive execution
+        tool_manifest: Optional[str] = None
     ):
         self.agent_factory = agent_factory
         self.mailbox = mailbox
@@ -37,6 +38,7 @@ class SupervisorAgent:
         self.llm = llm
         self.context_store = context_store
         self.unit_compiler = unit_compiler
+        self.tool_manifest = tool_manifest
         self.parser = JsonOutputParser(pydantic_object=PlanningResult)
 
     async def planning_node(self, state: AgentState) -> AgentState:
@@ -72,7 +74,11 @@ class SupervisorAgent:
         if template_path.exists():
             system_instruction = template_path.read_text()
 
-        # 3. Invoke LLM
+        # 3. Inject Tool Manifest if available
+        if self.tool_manifest:
+            system_instruction = f"{system_instruction}\n\n{self.tool_manifest}"
+
+        # 4. Invoke LLM
         prompt = [
             SystemMessage(content=system_instruction),
             *state["messages"]
@@ -93,7 +99,7 @@ class SupervisorAgent:
                 result = PlanningResult.model_validate(response)
         except Exception as e:
             logger.error(f"Planning failed: {e}")
-            return {"messages": [{"role": "system", "content": f"Planning Error: {e}"}], "metadata": {"strategy": ExecutionStrategy.FINISH}}
+            return {"messages": [{"role": "user", "content": f"[System] Planning Error: {e}"}], "metadata": {"strategy": ExecutionStrategy.FINISH}}
 
         metadata_update = {
             "strategy": result.strategy,
@@ -187,7 +193,7 @@ class SupervisorAgent:
 
         if not new_agent_state:
             return {
-                "messages": [{"role": "system", "content": f"Failed to spawn {sub_agent_id}: Quota or Depth limit reached."}],
+                "messages": [{"role": "user", "content": f"[System] Failed to spawn {sub_agent_id}: Quota or Depth limit reached."}],
                 "next_steps": state["next_steps"][1:]
             }
 
@@ -219,7 +225,7 @@ class SupervisorAgent:
             result_val = child_final_state.get("final_result", "Task completed.")
             return {
                 "quota": SessionQuota(agent_count=1),
-                "messages": [{"role": "system", "content": f"Sub-agent {sub_agent_id} returned: {result_val}"}],
+                "messages": [{"role": "user", "content": f"[System] Sub-agent {sub_agent_id} returned: {result_val}"}],
                 "next_steps": state["next_steps"][1:]
             }
 
@@ -235,7 +241,7 @@ class SupervisorAgent:
 
         return {
             "quota": SessionQuota(agent_count=1),
-            "messages": [{"role": "system", "content": f"Spawned {sub_agent_id} via Mailbox."}],
+            "messages": [{"role": "user", "content": f"[System] Spawned {sub_agent_id} via Mailbox."}],
             "next_steps": state["next_steps"][1:] 
         }
 
@@ -262,8 +268,8 @@ class SupervisorAgent:
         workflow.add_node("plan", self.planning_node)
         workflow.add_node("generate_prompt", self.generate_prompt_node)
         workflow.add_node("spawn", self.spawning_node)
-        workflow.add_node("abort", lambda s: {"messages": [{"role": "system", "content": "ABORTING: Repetition limit reached."}]})
-        workflow.add_node("tools", tool_node or (lambda s: {"messages": [{"role": "system", "content": "Tool node stub."}]}))
+        workflow.add_node("abort", lambda s: {"messages": [{"role": "user", "content": "[System] ABORTING: Repetition limit reached."}]})
+        workflow.add_node("tools", tool_node or (lambda s: {"messages": [{"role": "user", "content": "[System] Tool node stub."}]}))
 
         workflow.set_entry_point("plan")
         

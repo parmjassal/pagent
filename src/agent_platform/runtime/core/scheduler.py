@@ -131,6 +131,9 @@ class AutonomousScheduler:
 
             dispatcher = ToolDispatcher(registry, ProcessSandboxRunner(), guardrails)
             tool_node = AgentToolNode(dispatcher)
+            
+            # Fetch tool manifest for prompt injection
+            tool_manifest = registry.get_tool_manifest()
 
             # Resolve Agent Type (Role) from message or defaults
             role = inbox_msg.get("role", AgentRole.WORKER)
@@ -150,11 +153,16 @@ class AutonomousScheduler:
                     self.mailbox, 
                     self.generator, 
                     llm=llm,
-                    context_store=self.context_store
+                    context_store=self.context_store,
+                    tool_manifest=tool_manifest
                 )
                 graph = agent_instance.build_graph(checkpointer=checkpointer, tool_node=tool_node)
             else:
-                agent_instance = WorkerAgent(tool_node, llm=llm)
+                agent_instance = WorkerAgent(
+                    tool_node, 
+                    llm=llm,
+                    tool_manifest=tool_manifest
+                )
                 graph = agent_instance.build_graph(checkpointer=checkpointer)
 
             config = {"configurable": {"thread_id": agent_id}}

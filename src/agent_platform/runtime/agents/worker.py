@@ -23,9 +23,11 @@ class WorkerAgent:
         model_name: str = "gpt-4o",
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        llm: Optional[Any] = None
+        llm: Optional[Any] = None,
+        tool_manifest: Optional[str] = None
     ):
         self.tool_node = tool_node
+        self.tool_manifest = tool_manifest
         self.parser = JsonOutputParser(pydantic_object=WorkerResult)
         
         if llm:
@@ -60,6 +62,11 @@ class WorkerAgent:
         """Invokes the LLM to decide on a tool-use or finish strategy."""
         
         system_instruction = "You are a specialized worker agent. Use tools to complete your task."
+        
+        # Inject Tool Manifest if available
+        if self.tool_manifest:
+            system_instruction = f"{system_instruction}\n\n{self.tool_manifest}"
+
         format_instructions = self.parser.get_format_instructions()
         full_instruction = f"{system_instruction}\n\n{format_instructions}"
 
@@ -78,7 +85,7 @@ class WorkerAgent:
                 result = WorkerResult.model_validate(parsed)
             except Exception as e:
                 logger.error(f"Worker failed to parse JSON: {response.content}")
-                return {"messages": [{"role": "system", "content": f"Parse Error: {e}"}], "metadata": {"strategy": ExecutionStrategy.FINISH}}
+                return {"messages": [{"role": "user", "content": f"[System] Parse Error: {e}"}], "metadata": {"strategy": ExecutionStrategy.FINISH}}
         else:
             # Already a dict or object
             result = WorkerResult.model_validate(response)
@@ -115,7 +122,7 @@ class WorkerAgent:
         }
 
     def abort_node(self, state: AgentState) -> Dict[str, Any]:
-        return {"messages": [{"role": "system", "content": "Worker ABORTING: Loop detected."}]}
+        return {"messages": [{"role": "user", "content": "[System] Worker ABORTING: Loop detected."}]}
 
     def build_graph(self, checkpointer: Optional[Any] = None) -> Any:
         workflow = StateGraph(AgentState)

@@ -199,3 +199,52 @@ async def test_generator_receives_global_context(guardrail_env):
     
     assert "target_architecture" in human_msg
     assert "microservices pattern" in human_msg
+
+@pytest.mark.asyncio
+async def test_supervisor_injects_tool_manifest(guardrail_env):
+    """Verifies that SupervisorAgent injects the tool manifest into system prompt."""
+    mock_llm = AsyncMock()
+    from agent_platform.runtime.orch.models import PlanningResult, ExecutionStrategy
+    mock_llm.ainvoke.return_value = PlanningResult(thought_process="...", strategy=ExecutionStrategy.FINISH)
+    
+    manifest = "## Available Tools\n- **ls**: list files"
+    supervisor = SupervisorAgent(
+        agent_factory=MagicMock(),
+        mailbox=MagicMock(),
+        generator=MagicMock(),
+        llm=mock_llm,
+        tool_manifest=manifest
+    )
+    
+    state = create_initial_state("sup", "u", "s", Path("/tmp"), Path("/tmp"), role=AgentRole.SUPERVISOR)
+    await supervisor.planning_node(state)
+    
+    # Check first message (SystemMessage)
+    call_args = mock_llm.ainvoke.call_args[0][0]
+    system_msg = call_args[0].content
+    assert "## Available Tools" in system_msg
+    assert "ls" in system_msg
+
+@pytest.mark.asyncio
+async def test_worker_injects_tool_manifest(guardrail_env):
+    """Verifies that WorkerAgent injects the tool manifest into system prompt."""
+    mock_llm = AsyncMock()
+    # Mocking return for reasoning_node
+    from agent_platform.runtime.orch.models import WorkerResult, ExecutionStrategy
+    mock_llm.ainvoke.return_value = WorkerResult(thought_process="...", strategy=ExecutionStrategy.FINISH)
+    
+    manifest = "## Available Tools\n- **ls**: list files"
+    from agent_platform.runtime.agents.worker import WorkerAgent
+    worker = WorkerAgent(
+        tool_node=MagicMock(),
+        llm=mock_llm,
+        tool_manifest=manifest
+    )
+    
+    state = create_initial_state("wrk", "u", "s", Path("/tmp"), Path("/tmp"), role=AgentRole.WORKER)
+    await worker.reasoning_node(state)
+    
+    call_args = mock_llm.ainvoke.call_args[0][0]
+    system_msg = call_args[0].content
+    assert "## Available Tools" in system_msg
+    assert "ls" in system_msg
