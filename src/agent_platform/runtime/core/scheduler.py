@@ -107,22 +107,49 @@ class AutonomousScheduler:
             # Setup Tooling
             registry = ToolRegistry(self.session_path)
 
-            # 1. TODO Tools
+            # 1. Platform Core Tools (Priority 1: Reasoning & Context)
             todo_tool = TODOTool(self.session_path)
-            registry.register_native("add_task", todo_tool.add_task)
-            registry.register_native("list_tasks", todo_tool.list_tasks)
-            registry.register_native("update_task_status", todo_tool.update_task_status)
+            registry.register_native("add_task", todo_tool.add_task, source=ToolSource.CORE)
+            registry.register_native("list_tasks", todo_tool.list_tasks, source=ToolSource.CORE)
+            registry.register_native("update_task_status", todo_tool.update_status, source=ToolSource.CORE)
 
-            # 2. Filesystem tools
-            fs_tools = FilesystemTools(self.session_path)
-            registry.register_native("ls", fs_tools.ls)
-            registry.register_native("read_file", fs_tools.read_file)
-            registry.register_native("write_file", fs_tools.write_file)
-
-            # 3. Context & Knowledge Tools (Unified Interface)
             context_tools = ContextTools(self.context_store, knowledge_path=knowledge_path)
-            registry.register_native("update_context", context_tools.update_context)
-            registry.register_native("update_knowledge", context_tools.update_knowledge)
+            registry.register_native("update_context", context_tools.update_context, source=ToolSource.CORE)
+            registry.register_native("update_knowledge", context_tools.update_knowledge, source=ToolSource.CORE)
+
+            # 2. Filesystem & Discovery Tools (Priority 2)
+            fs_tools = FilesystemTools(self.session_path)
+            registry.register_native("ls", fs_tools.ls, source=ToolSource.CORE)
+            registry.register_native("read_file", fs_tools.read_file, source=ToolSource.CORE)
+            registry.register_native("write_file", fs_tools.write_file, source=ToolSource.CORE)
+            # Assuming grep_search and others are in fs_tools or registered similarly
+            
+            # 3. LangChain Community Tools (Priority 3: Heavy Execution)
+            try:
+                from langchain_community.tools import ShellTool, YouTubeSearchTool
+                from langchain_community.tools.ddg_search.tool import DuckDuckGoSearchRun
+                from langchain_community.tools.wikipedia.tool import WikipediaQueryRun
+                from langchain_community.utilities import WikipediaAPIWrapper
+                
+                # shell_exec
+                registry.register_langchain_tool(ShellTool())
+                
+                # web_search
+                registry.register_langchain_tool(DuckDuckGoSearchRun())
+                
+                # wikipedia
+                api_wrapper = WikipediaAPIWrapper(top_k_results=1, doc_content_chars_max=1000)
+                registry.register_langchain_tool(WikipediaQueryRun(api_wrapper=api_wrapper))
+                
+                # python_repl - Note: requires langchain_experimental or specific community package
+                try:
+                    from langchain_experimental.tools import PythonREPLTool
+                    registry.register_langchain_tool(PythonREPLTool())
+                except ImportError:
+                    logger.warning("langchain_experimental not found, skipping PythonREPLTool")
+
+            except ImportError as e:
+                logger.warning(f"Failed to load some community tools: {e}")
 
             # Initialize Guardrails with LLM Policy Generator
             policy_gen = LLMPolicyGenerator(
@@ -159,7 +186,10 @@ class AutonomousScheduler:
                 model=self.model_config["model_name"],
                 openai_api_base=self.model_config["openai_base_url"],
                 http_client=http_client,
-                temperature=0
+                temperature=0,
+                model_kwargs={
+                    "response_format": {"type": "json_object"}
+                    }
             )
 
             if role == AgentRole.SUPERVISOR:

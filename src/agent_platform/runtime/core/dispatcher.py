@@ -1,12 +1,12 @@
 import json
 import logging
+import inspect
 from pathlib import Path
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Callable, Optional, List
+from typing import Dict, Any, Callable, Optional, List, Union
 from .sandbox import SandboxRunner, SandboxResult
 from .guardrails import GuardrailManager
 from ..orch.state import AgentState
-from .tool_registry_defaults import STATIC_TOOL_REGISTRY
 from .schema import ToolSource, ErrorCode, ErrorDetail
 
 logger = logging.getLogger(__name__)
@@ -19,56 +19,117 @@ class DynamicToolLoader(ABC):
 class ToolRegistry:
     """
     Manages and persists the tool manifest for a session.
+    Uses Python introspection (inspect) to automatically discover tool signatures.
     """
     def __init__(self, session_path: Path):
         self.session_path = session_path
         self.registry_file = session_path / "tool_registry.json"
         self.metadata: Dict[str, Dict[str, Any]] = self._load()
         self.native_funcs: Dict[str, Callable] = {}
-        
-        # Load static defaults on init
-        self._load_defaults()
-
-    def _load_defaults(self):
-        for tool in STATIC_TOOL_REGISTRY:
-            if tool["name"] not in self.metadata:
-                self.metadata[tool["name"]] = {
-                    "source": tool["source"], 
-                    "summary": tool["summary"],
-                    "parameters": tool.get("parameters", [])
-                }
 
     def _load(self) -> Dict[str, Dict[str, Any]]:
         if self.registry_file.exists():
-            return json.loads(self.registry_file.read_text())
+            try:
+                return json.loads(self.registry_file.read_text())
+            except Exception as e:
+                logger.error(f"Failed to load tool registry: {e}")
         return {}
 
     def _save(self):
-        self.registry_file.write_text(json.dumps(self.metadata, indent=2))
+        try:
+            self.registry_file.write_text(json.dumps(self.metadata, indent=2))
+        except Exception as e:
+            logger.error(f"Failed to save tool registry: {e}")
 
-    def register_native(self, name: str, func: Callable, summary: str = ""):
-        self.metadata[name] = {"source": ToolSource.COMMUNITY, "summary": summary}
+    def register_native(self, name: str, func: Callable, summary: str = "", source: ToolSource = ToolSource.COMMUNITY):
+        """
+        Registers a native Python function as a tool.
+        Automatically discovers parameters using 'inspect'.
+        """
+        # 1. Automatic Parameter Discovery
+        try:
+            sig = inspect.signature(func)
+            params = []
+            for param_name in sig.parameters:
+                # Skip internal platform arguments
+                if param_name not in ("self", "state"):
+                    params.append(param_name)
+        except ValueError:
+            # Fallback for built-ins or non-introspectable objects
+            params = []
+
+        # 2. Automatic Summary Discovery from Docstring
+        if not summary and func.__doc__:
+            summary = func.__doc__.strip().split('\n')[0]
+
+        # 3. Update Metadata
+        self.metadata[name] = {
+            "source": source,
+            "summary": summary or "No description.",
+            "parameters": params
+        }
         self.native_funcs[name] = func
+        self._save()
+
+    def register_langchain_tool(self, lc_tool: Any):
+        """
+        Wraps a LangChain BaseTool and registers it.
+        Maps LC's 'args' and 'description' to the platform manifest.
+        """
+        name = lc_tool.name
+        summary = lc_tool.description
+        
+        # Discover parameters from LangChain's args schema
+        params = []
+        if hasattr(lc_tool, "args"):
+            params = list(lc_tool.args.keys())
+
+        self.metadata[name] = {
+            "source": ToolSource.COMMUNITY,
+            "summary": summary,
+            "parameters": params
+        }
+
+        # Wrap LC tool in a compatible native call that injects kwargs
+        async def wrapped_call(state: AgentState, **kwargs):
+            # LangChain tools use invoke/ainvoke
+            if hasattr(lc_tool, "ainvoke"):
+                return await lc_tool.ainvoke(kwargs)
+            else:
+                return lc_tool.invoke(kwargs)
+        
+        self.native_funcs[name] = wrapped_call
+        self._save()
 
     def register_dynamic(self, name: str, summary: str, code_path: Path):
+        """Registers a tool that will be executed in a sandbox."""
         self.metadata[name] = {
             "source": ToolSource.DYNAMIC,
             "summary": summary,
-            "path": str(code_path)
+            "path": str(code_path),
+            "parameters": ["..."] # Dynamic tools specify their own args in code
         }
         self._save()
 
     def get_source(self, name: str) -> ToolSource:
         entry = self.metadata.get(name, {})
-        return ToolSource(entry.get("source", ToolSource.DYNAMIC))
+        source_val = entry.get("source", ToolSource.DYNAMIC)
+        return ToolSource(source_val)
 
     def get_tool_manifest(self) -> str:
         """Returns a Markdown-formatted list of available tools for prompt injection."""
         nl = chr(10)
         manifest = f"## Available Tools{nl}{nl}"
-        for name, meta in self.metadata.items():
+        
+        # Sort by source (CORE first) then name for consistency
+        sorted_tools = sorted(
+            self.metadata.items(), 
+            key=lambda x: (0 if x[1].get("source") == ToolSource.CORE else 1, x[0])
+        )
+        
+        for name, meta in sorted_tools:
             params_list = meta.get("parameters", [])
-            params_str = f" ({', '.join(params_list)})" if params_list else ""
+            params_str = f"({', '.join(params_list)})" if params_list else "()"
             manifest += f"- **{name}{params_str}**: {meta.get('summary', 'No description.')}{nl}"
         return manifest
 
@@ -90,6 +151,7 @@ class ToolDispatcher:
         self.dynamic_loader = dynamic_loader
 
     async def dispatch(self, state: AgentState, tool_name: str, **kwargs) -> Dict[str, Any]:
+        # Guardrail check
         is_allowed, reason = await self.guardrails.validate_tool_call(state, tool_name, kwargs)
         if not is_allowed:
             return ErrorDetail(
@@ -99,7 +161,6 @@ class ToolDispatcher:
             ).to_dict()
 
         source = self.registry.get_source(tool_name)
-        logger.debug(f"Tool Invocation is {source}")
         if source == ToolSource.COMMUNITY or source == ToolSource.CORE:
             return await self._execute_native(tool_name, state, **kwargs)
         else:
@@ -107,7 +168,6 @@ class ToolDispatcher:
 
     async def _execute_native(self, tool_name: str, state: AgentState, **kwargs) -> Dict[str, Any]:
         func = self.registry.native_funcs.get(tool_name)
-        logger.info(f"Native Tool Call")
         if not func:
             return ErrorDetail(
                 code=ErrorCode.TOOL_NOT_FOUND,
@@ -115,13 +175,14 @@ class ToolDispatcher:
             ).to_dict()
         try:
             # Handle both async and sync native tools
-            import inspect
             if inspect.iscoroutinefunction(func):
                 result = await func(state=state, **kwargs)
             else:
+                # Check if it accepts 'state' (our native tools do, wrapped LC tools might not directly)
+                # But our wrapped_call above handles passing kwargs to LC.
+                # For direct native registration, we expect (state, **kwargs)
                 result = func(state=state, **kwargs)
             
-            # If the tool itself returned a dict with success=False, try to enrich it
             if isinstance(result, dict) and not result.get("success", True):
                 if "error_code" not in result:
                     result["error_code"] = ErrorCode.EXECUTION_ERROR.value
@@ -129,6 +190,7 @@ class ToolDispatcher:
 
             return {"output": result, "success": True, "source": "native"}
         except Exception as e:
+            logger.exception(f"Error executing tool {tool_name}")
             return ErrorDetail(
                 code=ErrorCode.EXECUTION_ERROR,
                 message=str(e),
@@ -136,8 +198,6 @@ class ToolDispatcher:
             ).to_dict()
 
     def _execute_sandboxed(self, tool_name: str, **kwargs) -> Dict[str, Any]:
-        logger.info(f"Dispatching to SANDBOX: {tool_name}")
-        
         if not self.dynamic_loader:
             return ErrorDetail(
                 code=ErrorCode.INTERNAL_ERROR,
