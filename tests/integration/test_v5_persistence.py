@@ -65,8 +65,18 @@ async def test_v5_graph_persistence_and_resume(persistence_env):
         
         supervisor = SupervisorAgent(env["factory"], env["mailbox"], env["generator"], llm=env["mock_llm"])
         graph = supervisor.build_graph(checkpointer=checkpointer)
-        
-        initial_state = create_initial_state(agent_id, env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"), role=AgentRole.SUPERVISOR)
+
+        # Correct paths
+        agent_dir = env["factory"].workspace.get_agent_dir(env["user_id"], env["session_id"], agent_id)
+        inbox, outbox, todo = agent_dir/"inbox", agent_dir/"outbox", agent_dir/"todo"
+
+        initial_state = create_initial_state(
+            agent_id, env["user_id"], env["session_id"], 
+            inbox, outbox, 
+            todo_path=todo,
+            role=AgentRole.SUPERVISOR
+        )
+
         config = {"configurable": {"thread_id": agent_id}}
         
         await graph.ainvoke(initial_state, config=config)

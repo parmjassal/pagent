@@ -53,7 +53,18 @@ async def test_v0_orchestration_flow(integ_env):
     env = integ_env
     supervisor = env["supervisor"]
     
-    initial_state = create_initial_state("super", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"), role=AgentRole.SUPERVISOR)
+    # Correct paths within session
+    agent_dir = env["session_path"] / "agents" / "super"
+    inbox = agent_dir / "inbox"
+    outbox = agent_dir / "outbox"
+    todo = agent_dir / "todo"
+    
+    initial_state = create_initial_state(
+        "super", env["user_id"], env["session_id"], 
+        inbox, outbox, 
+        todo_path=todo,
+        role=AgentRole.SUPERVISOR
+    )
     graph = supervisor.build_graph()
     
     final_state = await graph.ainvoke(initial_state)

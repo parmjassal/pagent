@@ -151,6 +151,7 @@ class SupervisorAgent:
                 # If all suggested tasks were redundant, ask LLM to re-evaluate or finish
                 return {
                     "messages": [{"role": "user", "content": "[System] All proposed sub-tasks are already in progress or completed. Please provide new tasks or finish."}],
+                    "metadata": metadata_update,
                     "node_counts": {"plan": 1}
                 }
 

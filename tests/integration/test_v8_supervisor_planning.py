@@ -26,7 +26,11 @@ def plan_env(tmp_path):
     mock_llm = AsyncMock()
     supervisor = SupervisorAgent(factory, mailbox, MagicMock(), llm=mock_llm)
 
-    return {"supervisor": supervisor, "mock_llm": mock_llm, "user_id": user_id, "session_id": session_id}
+    return {
+        "supervisor": supervisor, "mock_llm": mock_llm, 
+        "user_id": user_id, "session_id": session_id,
+        "session_path": session_path
+    }
 
 @pytest.mark.asyncio
 async def test_supervisor_planning_decompose(plan_env):
@@ -37,16 +41,19 @@ async def test_supervisor_planning_decompose(plan_env):
     plan_env["mock_llm"].ainvoke.return_value = PlanningResult(
         thought_process="Complex task, need help.",
         strategy=ExecutionStrategy.DECOMPOSE,
-        sub_tasks=[SubAgentTask(agent_id="helper", role=AgentRole.WORKER, instructions="Task")]
+        sub_tasks=[SubAgentTask(agent_id="new_helper", role=AgentRole.WORKER, instructions="Task")]
     )
 
-    state = create_initial_state("s1", plan_env["user_id"], plan_env["session_id"], Path("/tmp"), Path("/tmp"))
+    # Correct paths
+    agent_dir = plan_env["session_path"] / "agents" / "s1"
+    inbox, outbox, todo = agent_dir/"inbox", agent_dir/"outbox", agent_dir/"todo"
+    state = create_initial_state("s1", plan_env["user_id"], plan_env["session_id"], inbox, outbox, todo_path=todo, role=AgentRole.SUPERVISOR)
     
     # 2. Run Planning Node
     res = await sup.planning_node(state)
     
     assert res["metadata"]["strategy"] == ExecutionStrategy.DECOMPOSE
-    assert "helper" in res["next_steps"]
+    assert "new_helper" in res["next_steps"]
     assert sup._should_continue(res) == "generate_prompt"
 
 @pytest.mark.asyncio
@@ -61,7 +68,10 @@ async def test_supervisor_planning_tool_use(plan_env):
         tool_call=ToolCall(name="ls", args={"path": "."})
     )
 
-    state = create_initial_state("s1", plan_env["user_id"], plan_env["session_id"], Path("/tmp"), Path("/tmp"))
+    # Correct paths
+    agent_dir = plan_env["session_path"] / "agents" / "s1"
+    inbox, outbox, todo = agent_dir/"inbox", agent_dir/"outbox", agent_dir/"todo"
+    state = create_initial_state("s1", plan_env["user_id"], plan_env["session_id"], inbox, outbox, todo_path=todo, role=AgentRole.SUPERVISOR)
     
     # 2. Run Planning Node
     res = await sup.planning_node(state)

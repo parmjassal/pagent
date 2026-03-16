@@ -29,6 +29,19 @@ class FilesystemTools:
         if not resolved_path:
             return {"success": False, "error": f"Invalid path: {file_path}", "error_code": ErrorCode.INVALID_ARGUMENTS}
         
+        # Restriction: Cannot write to session-level knowledge/ directory directly.
+        # Must use ContextTools.update_knowledge for reasoned promotion.
+        knowledge_dir = (self.session_path / "knowledge").resolve()
+        try:
+            if resolved_path == knowledge_dir or knowledge_dir in resolved_path.parents:
+                return {
+                    "success": False, 
+                    "error": "Direct writes to the 'knowledge/' directory are prohibited. Please use 'update_knowledge' to promote global artifacts with proper prefixing.",
+                    "error_code": ErrorCode.PERMISSION_DENIED
+                }
+        except ValueError:
+            pass # Paths are on different drives or unrelated
+
         try:
             resolved_path.parent.mkdir(parents=True, exist_ok=True)
             resolved_path.write_text(content)

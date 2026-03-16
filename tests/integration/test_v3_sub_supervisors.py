@@ -31,7 +31,17 @@ async def test_sub_supervisor_spawning_flow(v3_env):
     env = v3_env
     supervisor = env["supervisor"]
     
-    state = create_initial_state("top_super", "u1", "s1", Path("/tmp"), Path("/tmp"), role=AgentRole.SUPERVISOR)
+    # Use isolated todo_path in session
+    session_path = env["workspace"].get_session_dir("u1", "s1")
+    todo_path = session_path / "agents" / "top_super" / "todo"
+    todo_path.mkdir(parents=True, exist_ok=True)
+
+    state = create_initial_state(
+        "top_super", "u1", "s1", 
+        Path("/tmp"), Path("/tmp"), 
+        todo_path=todo_path,
+        role=AgentRole.SUPERVISOR
+    )
     
     decomp_res = await supervisor.planning_node(state)
     state.update(decomp_res)

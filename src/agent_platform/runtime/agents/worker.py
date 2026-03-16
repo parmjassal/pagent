@@ -66,11 +66,18 @@ class WorkerAgent:
     async def reasoning_node(self, state: AgentState) -> AgentState:
         """Invokes the LLM to decide on a tool-use or finish strategy."""
         
+        # Resolve Template from session path
+        from pathlib import Path
+        session_path = Path(state["inbox_path"]).parent.parent.parent # user/sess/agents/id/inbox -> user/sess
+        template_path = session_path / "prompts" / "worker_reasoning.txt"
+        
         system_instruction = "You are a specialized worker agent. Use tools to complete your task."
+        if template_path.exists():
+            system_instruction = template_path.read_text()
         
         # Inject Tool Manifest if available
         if self.tool_manifest:
-            system_instruction = f"{system_instruction}\n\n{self.tool_manifest}"
+            system_instruction = f"{system_instruction}\n\n## Available Tools:\n{self.tool_manifest}"
 
         format_instructions = self.parser.get_format_instructions()
         full_instruction = f"{system_instruction}\n\n{format_instructions}"

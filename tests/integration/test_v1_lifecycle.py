@@ -82,7 +82,18 @@ async def test_v1_full_platform_lifecycle_with_mocks(v1_env):
     dispatcher = v1_env["dispatcher"]
     validator = v1_env["validator"]
 
-    state = create_initial_state("super_01", user_id, session_id, Path("/tmp"), Path("/tmp"), role=AgentRole.SUPERVISOR)
+    # Correct paths within session
+    agent_dir = session_path / "agents" / "super_01"
+    inbox = agent_dir / "inbox"
+    outbox = agent_dir / "outbox"
+    todo = agent_dir / "todo"
+
+    state = create_initial_state(
+        "super_01", user_id, session_id, 
+        inbox, outbox, 
+        todo_path=todo,
+        role=AgentRole.SUPERVISOR
+    )
     graph = supervisor.build_graph()
     final_state = await graph.ainvoke(state)
     assert final_state["quota"].agent_count == 1

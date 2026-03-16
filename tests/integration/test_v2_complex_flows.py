@@ -57,7 +57,10 @@ async def test_v2_recursive_depth_and_handover(v2_env):
         sub_tasks=[SubAgentTask(agent_id="agent_l1", role=AgentRole.WORKER, instructions="Task")]
     )
 
-    state = create_initial_state("super", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"), role=AgentRole.SUPERVISOR)
+    # Correct paths
+    agent_dir = env["session_path"] / "agents" / "super"
+    inbox, outbox, todo = agent_dir/"inbox", agent_dir/"outbox", agent_dir/"todo"
+    state = create_initial_state("super", env["user_id"], env["session_id"], inbox, outbox, todo_path=todo, role=AgentRole.SUPERVISOR)
     
     # 1. Spawn L1
     res1 = await supervisor.planning_node(state)
@@ -74,7 +77,10 @@ async def test_v2_recursive_depth_and_handover(v2_env):
     state["agent_id"] = "super/agent_l1" # Correct hierarchical ID for current agent
     state["current_depth"] = 1
     state["next_steps"] = [] # Clear for re-planning
-    
+    # Use L1's todo path for re-planning
+    l1_todo = env["session_path"] / "agents" / "super/agent_l1" / "todo"
+    state["todo_path"] = l1_todo
+
     res2 = await supervisor.planning_node(state)
     state.update(res2)
     res_spawn2 = await supervisor.spawning_node(state)
@@ -107,7 +113,10 @@ async def test_v2_session_quota_enforcement(v2_env):
     env = v2_env
     supervisor = env["supervisor"]
     
-    state = create_initial_state("super", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"), role=AgentRole.SUPERVISOR)
+    # Correct paths
+    agent_dir = env["session_path"] / "agents" / "super"
+    inbox, outbox, todo = agent_dir/"inbox", agent_dir/"outbox", agent_dir/"todo"
+    state = create_initial_state("super", env["user_id"], env["session_id"], inbox, outbox, todo_path=todo, role=AgentRole.SUPERVISOR)
     state["quota"].max_agents = 2
     
     # 1

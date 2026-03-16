@@ -1,5 +1,6 @@
 import logging
 import json
+import secrets
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Union, Tuple
 from pathlib import Path
@@ -19,10 +20,10 @@ class ResultHook(ABC):
 class OffloadingResultHook(ResultHook):
     """
     Standard implementation that offloads results larger than 'threshold' 
-    to the agent's outbox and returns a reference.
+    to the session knowledge directory and returns a reference.
     """
-    def __init__(self, agent_storage_path: Path, threshold_bytes: int = 10240): # Default 10KB
-        self.storage_path = agent_storage_path
+    def __init__(self, knowledge_storage_path: Path, threshold_bytes: int = 10240): # Default 10KB
+        self.storage_path = knowledge_storage_path
         self.threshold = threshold_bytes
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
@@ -34,8 +35,11 @@ class OffloadingResultHook(ResultHook):
         if size <= self.threshold:
             return {"type": "inline", "content": result, "size": size}
 
-        # Offload to disk
-        file_name = f"result_{agent_id}.json"
+        # Offload to knowledge directory with standard prefixing
+        prefix = secrets.token_hex(4).upper()
+        # Clean agent_id for filename
+        safe_agent_id = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in agent_id)
+        file_name = f"offload_{prefix}_{safe_agent_id}.json"
         target_path = self.storage_path / file_name
         target_path.write_text(raw_data)
 
@@ -45,7 +49,7 @@ class OffloadingResultHook(ResultHook):
         summary = raw_data[:200] + "..." if len(raw_data) > 200 else raw_data
         return {
             "type": "reference",
-            "path": str(target_path),
+            "path": f"knowledge/{file_name}",
             "summary": f"Large result offloaded. Preview: {summary}",
             "size": size
         }

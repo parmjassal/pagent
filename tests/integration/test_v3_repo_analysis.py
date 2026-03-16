@@ -53,7 +53,16 @@ async def test_v3_repo_analysis_with_mocked_llm(repo_env):
     supervisor = env["supervisor"]
     search_agent = env["search_agent"]
     
-    state = create_initial_state("super_01", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"), role=AgentRole.SUPERVISOR)
+    user_id, session_id = env["user_id"], env["session_id"]
+    agent_dir = env["session_path"] / "agents" / "super_01"
+    inbox, outbox, todo = agent_dir/"inbox", agent_dir/"outbox", agent_dir/"todo"
+    
+    state = create_initial_state(
+        "super_01", user_id, session_id, 
+        inbox, outbox, 
+        todo_path=todo,
+        role=AgentRole.SUPERVISOR
+    )
     
     decomp_state = await supervisor.planning_node(state)
     assert "analyst_agent" in decomp_state["next_steps"]

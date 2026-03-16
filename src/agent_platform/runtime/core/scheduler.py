@@ -102,10 +102,10 @@ class AutonomousScheduler:
 
         async with aiosqlite.connect(db_path) as conn:
             checkpointer = AsyncSqliteSaver(conn)
-            
+
             # Setup Tooling
             registry = ToolRegistry(self.session_path)
-            
+
             # 1. TODO Tools
             todo_tool = TODOTool(self.session_path)
             registry.register_native("add_task", todo_tool.add_task)
@@ -117,9 +117,11 @@ class AutonomousScheduler:
             registry.register_native("ls", fs_tools.ls)
             registry.register_native("read_file", fs_tools.read_file)
             registry.register_native("write_file", fs_tools.write_file)
-            
-            context_tools = ContextTools(self.context_store)
+
+            # 3. Context & Knowledge Tools (Unified Interface)
+            context_tools = ContextTools(self.context_store, knowledge_path=knowledge_path)
             registry.register_native("update_context", context_tools.update_context)
+            registry.register_native("update_knowledge", context_tools.update_knowledge)
 
             # Initialize Guardrails with LLM Policy Generator
             policy_gen = LLMPolicyGenerator(
@@ -131,13 +133,25 @@ class AutonomousScheduler:
 
             dispatcher = ToolDispatcher(registry, ProcessSandboxRunner(), guardrails)
             tool_node = AgentToolNode(dispatcher)
-            
+
+            # Result Hook for automated scratch_pad offloading
+            result_hook = OffloadingResultHook(knowledge_path)
+
+            # UnitCompiler for recursive spawning
+            from ..orch.unit_compiler import UnitCompiler
+            unit_compiler = UnitCompiler(
+                self.factory, self.mailbox, self.generator,
+                dispatcher=dispatcher,
+                result_hook=result_hook,
+                model_config=self.model_config
+            )
+
             # Fetch tool manifest for prompt injection
             tool_manifest = registry.get_tool_manifest()
 
             # Resolve Agent Type (Role) from message or defaults
             role = inbox_msg.get("role", AgentRole.SUPERVISOR)
-            
+
             # Initialize LLM
             http_client = get_platform_http_client()
             llm = ChatOpenAI(
@@ -154,17 +168,19 @@ class AutonomousScheduler:
                     self.generator, 
                     llm=llm,
                     context_store=self.context_store,
-                    tool_manifest=tool_manifest
+                    unit_compiler=unit_compiler,
+                    tool_manifest=tool_manifest,
+                    result_hook=result_hook
                 )
                 graph = agent_instance.build_graph(checkpointer=checkpointer, tool_node=tool_node)
             else:
                 agent_instance = WorkerAgent(
                     tool_node, 
                     llm=llm,
-                    tool_manifest=tool_manifest
+                    tool_manifest=tool_manifest,
+                    result_hook=result_hook
                 )
                 graph = agent_instance.build_graph(checkpointer=checkpointer)
-
             config = {"configurable": {"thread_id": agent_id}}
             current_state = await graph.aget_state(config)
             
