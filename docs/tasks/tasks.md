@@ -1,4 +1,13 @@
-# Tasks
+## Refined Context & Knowledge Orchestration (v2.1)
+- [ ] **Unified Context Interface:** Refactor `ContextTools` to handle hierarchical `update_context` and global `update_knowledge`.
+- [ ] **Reasoning-driven Global Knowledge:** Implement `update_knowledge` with `[8-char-hex-prefix]_[contextual_name].json` naming logic.
+- [ ] **Scratchpad Offloading Refactor:** Update `OffloadingResultHook` to use a distinct `offload_` prefix and write to the global `knowledge/` folder.
+- [ ] **Filesystem Restriction:** Prevent `FilesystemTools.write_file` from writing directly to the `knowledge/` directory to enforce reasoning-driven knowledge promotion.
+- [ ] **Initialization Alignment:** Correctly initialize `ContextTools` with both `ContextStore` and `knowledge_path` in `bootstrap.py`.
+- [ ] **Prompt Updates:** Update Supervisor and Worker prompts to distinguish between Downward (Branch) and Global (Reasoned) visibility.
+- [ ] **Verification:** Add unit tests for prefix logic and integration tests for filesystem write restrictions.
+
+# Original Tasks (Archive/Complete)
 
 ## Workspace & Core Runtime
 - [x] Workspace Root Resolution (Env Var / Home Dir)
