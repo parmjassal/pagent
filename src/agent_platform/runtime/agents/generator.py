@@ -53,7 +53,12 @@ class SystemGeneratorAgent:
                 target_id = last_msg.split("spawned ")[1].strip()
 
         # 1. Resolve Template from Session
-        session_path = state["inbox_path"].parent.parent.parent
+        if self.workspace:
+            session_path = self.workspace.get_session_dir(state["user_id"], state["session_id"])
+        else:
+            # Fallback for tests if workspace not injected
+            session_path = state["inbox_path"].parent.parent.parent 
+            
         template_name = f"generator_{task_type.value}.txt"
         template_path = session_path / "prompts" / template_name
         
