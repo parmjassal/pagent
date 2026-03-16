@@ -20,6 +20,7 @@ from ..agents.worker import WorkerAgent
 from ..agents.generator import SystemGeneratorAgent, TaskType
 from ..orch.state import create_initial_state, AgentRole
 from ..orch.tool_node import AgentToolNode
+from ..core.schema import ToolSource
 from ..core.tools.filesystem import FilesystemTools
 from ..core.context_store import FilesystemContextStore
 from ..storage.context_tool import ContextTools

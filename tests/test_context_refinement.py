@@ -6,6 +6,7 @@ from agent_platform.runtime.core.context_store import FilesystemContextStore
 from agent_platform.runtime.core.tools.filesystem import FilesystemTools
 from agent_platform.runtime.orch.result_hook import OffloadingResultHook
 from agent_platform.runtime.orch.state import create_initial_state, AgentRole
+from agent_platform.runtime.core.schema import ToolSource
 
 @pytest.fixture
 def session_env(tmp_path):
