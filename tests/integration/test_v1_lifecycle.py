@@ -93,5 +93,5 @@ async def test_v1_full_platform_lifecycle_with_mocks(v1_env):
 
     def search_stub(query, state=None): return f"Search: {query}"
     dispatcher.registry.register_native("google_search", search_stub)
-    native_res = dispatcher.dispatch(final_state, "google_search", query="mock")
+    native_res = await dispatcher.dispatch(final_state, "google_search", query="mock")
     assert native_res["success"] is True

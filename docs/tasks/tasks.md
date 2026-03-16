@@ -50,3 +50,10 @@
 - [x] **Proxy Support:** Custom base URL and Redirect detection hooks.
 - [x] **Rich CLI UI:** Live Tree and Thinking states using `rich`.
 - [x] **Persistent Logging:** Dual stderr/file trace in the session context.
+
+## Global Context & Guardrail Refinement
+- [x] **Guardrail Context-Awareness:** Inject visible facts into the Policy Generator.
+- [x] **Supervisor Intent Persistence:** Record high-level tasks as persistent facts in Supervisor's context.
+- [ ] **Error Hardening:** Standardize error messages and types for structured reasoning in results.
+- [x] **Generator Context-Awareness:** Inject visible facts into sub-agent prompts.
+- [x] **Robustness Fix:** Prevent `KeyError: tool_call_id` on LLM hallucinations.

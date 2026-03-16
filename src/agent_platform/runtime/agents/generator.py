@@ -4,6 +4,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from ..orch.state import AgentState
 from ..core.workspace import WorkspaceContext
+from ..core.context_store import ContextStore
 from ..core.http_client import get_platform_http_client
 
 import logging
@@ -25,9 +26,11 @@ class SystemGeneratorAgent:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         llm: Optional[Any] = None, 
-        workspace: Optional[WorkspaceContext] = None
+        workspace: Optional[WorkspaceContext] = None,
+        context_store: Optional[ContextStore] = None
     ):
         self.workspace = workspace
+        self.context_store = context_store
         
         if llm:
             self.llm = llm
@@ -44,6 +47,7 @@ class SystemGeneratorAgent:
     async def generate_node(self, state: AgentState, task_type: TaskType = TaskType.PROMPT) -> Dict[str, Any]:
         """LangGraph node to generate tailored output using session templates."""
         
+        agent_id = state["agent_id"]
         target_id = "unknown"
         if state.get("next_steps"):
             target_id = state["next_steps"][0]
@@ -66,13 +70,27 @@ class SystemGeneratorAgent:
         if template_path.exists():
             system_instruction = template_path.read_text()
 
+        # 2. Resolve Visible Global Context (Facts)
+        visible_context = ""
+        if self.context_store:
+            facts = self.context_store.list_facts(agent_id)
+            if facts:
+                fact_contents = []
+                for fid in facts:
+                    content = self.context_store.read_fact(agent_id, fid)
+                    if content:
+                        fact_contents.append(f"### Fact: {fid}\n{content}")
+                visible_context = "\n\n".join(fact_contents)
+
         # Resolve Task Context from metadata
         task_context = state.get("metadata", {}).get("current_task_instructions", "No specific instructions provided.")
 
-        # 2. Invoke LLM with structured messages
-        # System Message contains the "How to Generate"
-        # Human Message contains the "What to Generate For"
-        human_data = f"Target Agent ID: {target_id}\nTarget Task Description: {task_context}"
+        # 3. Invoke LLM with structured messages
+        human_data = (
+            f"Target Agent ID: {target_id}\n"
+            f"Target Task Description: {task_context}\n\n"
+            f"GLOBAL CONTEXT (Visible Facts):\n{visible_context or 'No additional global context.'}"
+        )
         
         logger.debug(f"Generator Input ({task_type.value}): {human_data}")
         

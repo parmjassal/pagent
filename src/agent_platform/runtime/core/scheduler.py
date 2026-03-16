@@ -13,11 +13,11 @@ from .mailbox import Mailbox, FilesystemMailboxProvider
 from .agent_factory import AgentFactory
 from .dispatcher import ToolDispatcher, ToolRegistry
 from .sandbox import ProcessSandboxRunner
-from .guardrails import GuardrailManager
+from .guardrails import GuardrailManager, LLMPolicyGenerator
 from .todo import TODOManager
 from ..agents.supervisor import SupervisorAgent
 from ..agents.worker import WorkerAgent
-from ..agents.generator import SystemGeneratorAgent
+from ..agents.generator import SystemGeneratorAgent, TaskType
 from ..orch.state import create_initial_state, AgentRole
 from ..orch.tool_node import AgentToolNode
 from ..core.tools.filesystem import FilesystemTools
@@ -50,11 +50,16 @@ class AutonomousScheduler:
             "model_name": model_name,
             "openai_base_url": openai_base_url
         }
+        
+        # Shared Context Store
+        self.context_store = FilesystemContextStore(self.session_path)
+
         # Shared generator for the session
         self.generator = SystemGeneratorAgent(
             model_name=model_name,
             base_url=openai_base_url,
-            workspace=workspace
+            workspace=workspace,
+            context_store=self.context_store
         )
 
     async def run_forever(self):
@@ -113,11 +118,18 @@ class AutonomousScheduler:
             registry.register_native("read_file", fs_tools.read_file)
             registry.register_native("write_file", fs_tools.write_file)
             
-            context_store = FilesystemContextStore(self.session_path)
-            context_tools = ContextTools(context_store)
+            context_tools = ContextTools(self.context_store)
             registry.register_native("update_context", context_tools.update_context)
 
-            dispatcher = ToolDispatcher(registry, ProcessSandboxRunner(), GuardrailManager())
+            # Initialize Guardrails with LLM Policy Generator
+            policy_gen = LLMPolicyGenerator(
+                model_name=self.model_config["model_name"],
+                base_url=self.model_config["openai_base_url"]
+            )
+            # Inject Context Store into Guardrails
+            guardrails = GuardrailManager(policy_generator=policy_gen, context_store=self.context_store)
+
+            dispatcher = ToolDispatcher(registry, ProcessSandboxRunner(), guardrails)
             tool_node = AgentToolNode(dispatcher)
 
             # Resolve Agent Type (Role) from message or defaults
@@ -134,7 +146,11 @@ class AutonomousScheduler:
 
             if role == AgentRole.SUPERVISOR:
                 agent_instance = SupervisorAgent(
-                    self.factory, self.mailbox, self.generator, llm=llm
+                    self.factory, 
+                    self.mailbox, 
+                    self.generator, 
+                    llm=llm,
+                    context_store=self.context_store
                 )
                 graph = agent_instance.build_graph(checkpointer=checkpointer, tool_node=tool_node)
             else:

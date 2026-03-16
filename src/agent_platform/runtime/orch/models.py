@@ -14,6 +14,7 @@ class SubAgentTask(BaseModel):
     instructions: str = Field(description="Specific instructions for this agent")
 
 class ToolCall(BaseModel):
+    id: Optional[str] = Field(default=None, description="The unique ID of the tool call from the LLM")
     name: str = Field(description="Name of the tool to invoke")
     args: Dict[str, Any] = Field(default_factory=dict, description="Arguments for the tool")
 

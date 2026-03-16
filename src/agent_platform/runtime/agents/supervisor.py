@@ -12,6 +12,7 @@ from ..orch.quota import SessionQuota
 from ..core.agent_factory import AgentFactory
 from ..core.mailbox import Mailbox
 from ..core.todo import TODOManager, ScopedTask
+from ..core.context_store import ContextStore
 from .generator import SystemGeneratorAgent, TaskType
 
 logger = logging.getLogger(__name__)
@@ -27,12 +28,14 @@ class SupervisorAgent:
         mailbox: Mailbox, 
         generator: SystemGeneratorAgent,
         llm: Any,
+        context_store: Optional[ContextStore] = None,
         unit_compiler: Optional[Any] = None # For recursive execution
     ):
         self.agent_factory = agent_factory
         self.mailbox = mailbox
         self.generator = generator
         self.llm = llm
+        self.context_store = context_store
         self.unit_compiler = unit_compiler
         self.parser = JsonOutputParser(pydantic_object=PlanningResult)
 
@@ -40,12 +43,28 @@ class SupervisorAgent:
         """Determines the execution strategy based on current state."""
         logger.info(f"Agent {state['agent_id']} entering planning_node. Node counts: {state['node_counts']}")
         
-        # 0. Loop Prevention: If we already have next_steps, don't re-plan, just continue
+        # 0. Intent Persistence: If this is the first planning step, record the intent
+        if state["node_counts"].get("plan", 0) == 0 and self.context_store:
+            initial_msg = ""
+            for m in state["messages"]:
+                if isinstance(m, dict) and m.get("role") == "user":
+                    initial_msg = str(m.get("content", ""))
+                    break
+            
+            if initial_msg:
+                self.context_store.update_fact(
+                    state["agent_id"], 
+                    "initial_intent", 
+                    f"The high-level goal for this session is: {initial_msg}",
+                    state["role"]
+                )
+
+        # 1. Loop Prevention: If we already have next_steps, don't re-plan, just continue
         if state.get("next_steps"):
             logger.info(f"Agent {state['agent_id']} already has next_steps. Continuing with current plan.")
             return {"node_counts": {"plan": 1}}
 
-        # 1. Resolve Template
+        # 2. Resolve Template
         session_path = self.agent_factory.workspace.get_session_dir(state["user_id"], state["session_id"])
         template_path = session_path / "prompts" / "supervisor_decompose.txt"
         
@@ -53,7 +72,7 @@ class SupervisorAgent:
         if template_path.exists():
             system_instruction = template_path.read_text()
 
-        # 2. Invoke LLM
+        # 3. Invoke LLM
         prompt = [
             SystemMessage(content=system_instruction),
             *state["messages"]
@@ -104,7 +123,18 @@ class SupervisorAgent:
             }
         
         elif result.strategy == ExecutionStrategy.TOOL_USE and result.tool_call:
-            metadata_update["next_tool_call"] = result.tool_call.model_dump()
+            # Capture ID from AIMessage if it was a real tool call format
+            tool_call_id = None
+            if hasattr(response, "tool_calls") and response.tool_calls:
+                tool_call_id = response.tool_calls[0].get("id")
+            elif hasattr(response, "id"):
+                tool_call_id = response.id
+            
+            tc_dump = result.tool_call.model_dump()
+            if tool_call_id:
+                tc_dump["id"] = tool_call_id
+
+            metadata_update["next_tool_call"] = tc_dump
             return {
                 "messages": [{"role": "assistant", "content": result.thought_process}],
                 "metadata": metadata_update,

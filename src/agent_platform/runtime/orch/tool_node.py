@@ -1,4 +1,5 @@
 import logging
+import uuid
 from typing import Dict, Any, List, Optional
 from ..orch.state import AgentState
 from ..core.dispatcher import ToolDispatcher
@@ -14,7 +15,7 @@ class AgentToolNode:
     def __init__(self, dispatcher: ToolDispatcher):
         self.dispatcher = dispatcher
 
-    def __call__(self, state: AgentState) -> Dict[str, Any]:
+    async def __call__(self, state: AgentState) -> Dict[str, Any]:
         """
         Executes the tool specified in metadata or messages and updates state.
         """
@@ -25,13 +26,22 @@ class AgentToolNode:
 
         tool_name = tool_call.get("name")
         tool_args = tool_call.get("args", {})
+        
+        # Robust ID resolution to prevent KeyError: 'tool_call_id' in LangChain
+        raw_id = tool_call.get("id")
+        if raw_id:
+            tool_call_id = raw_id
+        else:
+            # Generate a stable fallback ID if the LLM hallucinated the call without one
+            tool_call_id = f"fallback_{str(uuid.uuid4())[:8]}"
+            logger.warning(f"Tool call '{tool_name}' missing ID. Generated fallback: {tool_call_id}")
 
         if not tool_name:
             return {"messages": [{"role": "system", "content": "ToolNode: Missing tool name."}]}
 
         # 2. Dispatch Execution (Native or Sandboxed)
-        logger.info(f"Agent {state['agent_id']} calling tool: {tool_name}")
-        result = self.dispatcher.dispatch(state, tool_name, **tool_args)
+        logger.info(f"Agent {state['agent_id']} calling tool: {tool_name} (ID: {tool_call_id})")
+        result = await self.dispatcher.dispatch(state, tool_name, **tool_args)
 
         # 3. Process Result
         if result["success"]:
@@ -44,7 +54,7 @@ class AgentToolNode:
         # 4. Return State Update
         return {
             "messages": [
-                {"role": "tool", "name": tool_name, "content": content},
+                {"role": "tool", "name": tool_name, "content": content, "tool_call_id": tool_call_id},
                 {"role": "system", "content": log_msg}
             ],
             "metadata": {"next_tool_call": None} # Clear request after execution

@@ -89,7 +89,16 @@ class WorkerAgent:
         }
 
         if result.strategy == ExecutionStrategy.TOOL_USE and result.tool_call:
-            metadata_update["next_tool_call"] = result.tool_call.model_dump()
+            # Capture ID from AIMessage if it was a real tool call format
+            tool_call_id = None
+            if hasattr(response, "tool_calls") and response.tool_calls:
+                tool_call_id = response.tool_calls[0].get("id")
+            
+            tc_dump = result.tool_call.model_dump()
+            if tool_call_id:
+                tc_dump["id"] = tool_call_id
+                
+            metadata_update["next_tool_call"] = tc_dump
             return {
                 "role": state["role"],
                 "messages": [{"role": "assistant", "content": result.thought_process}],

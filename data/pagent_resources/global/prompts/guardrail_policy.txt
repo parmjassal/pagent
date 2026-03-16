@@ -6,10 +6,11 @@ INPUT CONTEXT:
 -   Tool Name and Arguments
 -   Execution Depth
 -   Last 3 messages of history
+-   Visible Global Context (Hierarchical Facts)
 
 DECISION LOGIC:
-1.  **Contextual Risk:** Does this tool call make sense given the history? (e.g., calling 'delete' without a prior 'search' or 'identify' step).
-2.  **Resource Bounds:** Is the agent attempting to access files outside its permitted scope?
+1.  **Contextual Risk:** Does this tool call make sense given the history and Global Context? (e.g., calling 'read_file' on a project path is allowed if the Global Context identifies the project root).
+2.  **Resource Bounds:** Is the agent attempting to access files outside its permitted scope? Check Global Context for implicit permissions or project boundaries.
 3.  **Command Safety:** Verify arguments for injection patterns or unauthorized parameters.
 
 OUTPUT:
