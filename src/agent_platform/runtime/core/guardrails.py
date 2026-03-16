@@ -68,7 +68,15 @@ class GuardrailManager:
 
         history = ""
         if state.get("messages"):
-            history = " ".join([m["content"] for m in state["messages"][-3:]])
+            history_content = []
+            for m in state["messages"][-3:]:
+                if hasattr(m, "content"):
+                    history_content.append(str(m.content))
+                elif isinstance(m, dict):
+                    history_content.append(str(m.get("content", "")))
+                else:
+                    history_content.append(str(m))
+            history = " ".join(history_content)
 
         key_data = {
             "user_id": user_id,

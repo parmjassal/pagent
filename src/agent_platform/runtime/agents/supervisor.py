@@ -1,95 +1,75 @@
-from typing import List, Dict, Any, Optional
 import logging
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage
-from langchain_core.output_parsers import JsonOutputParser
+import json
+from typing import Dict, Any, List, Optional
+from langchain_core.messages import SystemMessage, HumanMessage, BaseMessage
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.base import BaseCheckpointSaver
+
 from ..orch.state import AgentState, AgentRole
+from ..orch.models import PlanningResult, ExecutionStrategy, SubAgentTask
 from ..orch.quota import SessionQuota
 from ..core.agent_factory import AgentFactory
+from ..core.mailbox import Mailbox
 from ..core.todo import TODOManager, ScopedTask
 from .generator import SystemGeneratorAgent, TaskType
-from ..orch.logic import LoopMonitor
-from ..core.http_client import get_platform_http_client
-from ..orch.models import DecompositionResult, PlanningResult, ExecutionStrategy
-from ..core.mailbox import Mailbox
 
 logger = logging.getLogger(__name__)
 
 class SupervisorAgent:
-    """The primary orchestrator that plans, decomposes tasks or executes tools."""
-
+    """
+    Supervisor agent responsible for decomposing tasks and spawning sub-agents.
+    Now supports both TOOL_USE and DECOMPOSE strategies.
+    """
     def __init__(
         self, 
-        agent_factory: AgentFactory,
-        mailbox: Mailbox,
+        agent_factory: AgentFactory, 
+        mailbox: Mailbox, 
         generator: SystemGeneratorAgent,
-        model_name: str = "gpt-4o", 
-        api_key: Optional[str] = None, 
-        base_url: Optional[str] = None,
-        llm: Optional[Any] = None,
-        unit_compiler: Optional[Any] = None 
+        llm: Any,
+        unit_compiler: Optional[Any] = None # For recursive execution
     ):
         self.agent_factory = agent_factory
         self.mailbox = mailbox
         self.generator = generator
+        self.llm = llm
         self.unit_compiler = unit_compiler
-        
-        self.parser = JsonOutputParser(pydantic_object=PlanningResult)
-        
-        if llm:
-            self.llm = llm
-        else:
-            http_client = get_platform_http_client()
-            self.base_llm = ChatOpenAI(
-                model=model_name,
-                openai_api_key=api_key,
-                openai_api_base=base_url,
-                http_client=http_client,
-                temperature=0 
-            )
-            self.llm = self.base_llm | self.parser
-
-    def _should_continue(self, state: AgentState) -> str:
-        """Determines the next path based on the chosen strategy."""
-        strategy = state.get("metadata", {}).get("strategy")
-        
-        node_threshold = 10 # Increased for multi-step reasoning
-        if LoopMonitor.check_node_loop(state, "plan", threshold=node_threshold):
-            return "abort"
-        if LoopMonitor.check_content_loop(state, window=3):
-            return "abort"
-
-        if strategy == ExecutionStrategy.DECOMPOSE:
-            return "generate_prompt"
-        elif strategy == ExecutionStrategy.TOOL_USE:
-            return "tools"
-        elif strategy == ExecutionStrategy.FINISH:
-            return END
-        
-        return END
 
     async def planning_node(self, state: AgentState) -> AgentState:
-        """Invokes the LLM to decide on an execution strategy."""
-        logger.info(f"Agent {state['agent_id']} entering planning_node. Node counts: {state.get('node_counts')}")
+        """Determines the execution strategy based on current state."""
+        logger.info(f"Agent {state['agent_id']} entering planning_node. Node counts: {state['node_counts']}")
         
-        template_path = state["inbox_path"].parent.parent.parent / "prompts" / "supervisor_decompose.txt"
-        system_instruction = "You are a task planning supervisor."
+        # 0. Loop Prevention: If we already have next_steps, don't re-plan, just continue
+        if state.get("next_steps"):
+            logger.info(f"Agent {state['agent_id']} already has next_steps. Continuing with current plan.")
+            return {"node_counts": {"plan": 1}}
+
+        # 1. Resolve Template
+        session_path = self.agent_factory.workspace.get_session_dir(state["user_id"], state["session_id"])
+        template_path = session_path / "prompts" / "supervisor_decompose.txt"
+        
+        system_instruction = "Decompose the task."
         if template_path.exists():
             system_instruction = template_path.read_text()
 
-        format_instructions = self.parser.get_format_instructions()
-        full_instruction = f"{system_instruction}\n\n{format_instructions}"
-
+        # 2. Invoke LLM
         prompt = [
-            SystemMessage(content=full_instruction),
+            SystemMessage(content=system_instruction),
             *state["messages"]
         ]
         
-        raw_result = await self.llm.ainvoke(prompt)
-        result = PlanningResult.model_validate(raw_result)
-        
+        try:
+            response = await self.llm.ainvoke(prompt)
+            # Handle both raw LLM and parsed Pydantic
+            if hasattr(response, "strategy"):
+                result = response
+            else:
+                # If the LLM didn't return a Pydantic object, we might need to parse it
+                # For now assume the injected LLM is structured
+                result = PlanningResult.model_validate(response)
+        except Exception as e:
+            logger.error(f"Planning failed: {e}")
+            return {"messages": [{"role": "system", "content": f"Planning Error: {e}"}], "metadata": {"strategy": ExecutionStrategy.FINISH}}
+
         metadata_update = {
             "strategy": result.strategy,
             "thought_process": result.thought_process
@@ -107,11 +87,10 @@ class SupervisorAgent:
                 ))
                 next_steps.append(task_def.agent_id)
             
-            metadata_update["next_agent_role"] = result.sub_tasks[0].role
-            metadata_update["current_task_instructions"] = result.sub_tasks[0].instructions
+            # Store sub-tasks details in metadata for the generator node
+            metadata_update["sub_tasks_config"] = [t.model_dump() for t in result.sub_tasks]
             
             return {
-                "role": state["role"],
                 "messages": [{"role": "assistant", "content": result.thought_process}],
                 "next_steps": next_steps,
                 "metadata": metadata_update,
@@ -121,59 +100,87 @@ class SupervisorAgent:
         elif result.strategy == ExecutionStrategy.TOOL_USE and result.tool_call:
             metadata_update["next_tool_call"] = result.tool_call.model_dump()
             return {
-                "role": state["role"],
                 "messages": [{"role": "assistant", "content": result.thought_process}],
                 "metadata": metadata_update,
                 "node_counts": {"plan": 1}
             }
 
         return {
-            "role": state["role"],
             "messages": [{"role": "assistant", "content": result.thought_process}],
             "metadata": metadata_update,
             "node_counts": {"plan": 1}
         }
 
     async def generate_prompt_node(self, state: AgentState) -> Dict[str, Any]:
-        return await self.generator.generate_node(state, task_type=TaskType.PROMPT)
+        """Uses SystemGeneratorAgent to build a prompt for the current next_step."""
+        if not state["next_steps"]:
+            return {}
+
+        current_sub_id = state["next_steps"][0]
+        
+        # Find instruction for this specific sub-agent from metadata
+        sub_tasks = state.get("metadata", {}).get("sub_tasks_config", [])
+        instruction = next((t["instructions"] for t in sub_tasks if t["agent_id"] == current_sub_id), "Process task.")
+        
+        # Inject instruction into metadata for generator to pick up
+        state["metadata"]["current_task_instructions"] = instruction
+        
+        res = await self.generator.generate_node(state, task_type=TaskType.PROMPT)
+        return res
 
     async def spawning_node(self, state: AgentState) -> AgentState:
+        """Creates the child workspace and sends the initial message."""
         if not state["next_steps"]:
             return state
 
         raw_sub_id = state["next_steps"][0]
-        # Construct hierarchical ID: current_agent_id/sub_id
         sub_agent_id = f"{state['agent_id']}/{raw_sub_id}"
         
         prompt = state.get("generated_output")
-        next_role = state.get("metadata", {}).get("next_agent_role", AgentRole.WORKER)
+        # Find role for this specific sub-agent
+        sub_tasks = state.get("metadata", {}).get("sub_tasks_config", [])
+        next_role = next((t["role"] for t in sub_tasks if t["agent_id"] == raw_sub_id), AgentRole.WORKER)
 
-        new_agent_state = self.agent_factory.create_agent(
+        self.agent_factory.create_agent(
             user_id=state["user_id"],
             session_id=state["session_id"],
             agent_id=sub_agent_id,
-            current_quota=state["quota"],
-            parent_depth=state["current_depth"],
-            generated_output=prompt,
-            role=next_role 
+            current_quota=state["quota"]
         )
 
-        if not new_agent_state:
-            return {"messages": [{"role": "system", "content": f"Failed to spawn {sub_agent_id}"}]}
-        
+        # Handle Recursive Execution if UnitCompiler provided
         if self.unit_compiler:
-            logger.info(f"Supervisor {state['agent_id']} AWAITING subgraph: {sub_agent_id}")
-            sub_graph = self.unit_compiler.compile_unit(role=next_role)
-            sub_input = {**state, **new_agent_state}
-            sub_result_state = await sub_graph.ainvoke(sub_input)
-            final_res = sub_result_state.get("final_result", {"content": "Sub-task finished."})
+            logger.info(f"Recursive Execution: Spawning {sub_agent_id} in-thread.")
+            child_graph = self.unit_compiler.compile_unit(next_role)
             
+            # Prepare child state
+            child_inbox = self.agent_factory.workspace.get_agent_dir(state["user_id"], state["session_id"], sub_agent_id) / "inbox"
+            child_outbox = self.agent_factory.workspace.get_agent_dir(state["user_id"], state["session_id"], sub_agent_id) / "outbox"
+            child_todo = self.agent_factory.workspace.get_agent_dir(state["user_id"], state["session_id"], sub_agent_id) / "todo"
+            
+            child_initial_state = {
+                **state,
+                "agent_id": sub_agent_id,
+                "role": next_role,
+                "messages": [SystemMessage(content=prompt)],
+                "inbox_path": child_inbox,
+                "outbox_path": child_outbox,
+                "todo_path": child_todo,
+                "current_depth": state["current_depth"] + 1,
+                "final_result": None,
+                "next_steps": []
+            }
+            
+            child_final_state = await child_graph.ainvoke(child_initial_state)
+            
+            result_val = child_final_state.get("final_result", "Task completed.")
             return {
-                "quota": sub_result_state["quota"],
-                "messages": [{"role": "system", "content": f"Sub-agent {sub_agent_id} returned: {final_res}"}],
+                "quota": SessionQuota(agent_count=1),
+                "messages": [{"role": "system", "content": f"Sub-agent {sub_agent_id} returned: {result_val}"}],
                 "next_steps": state["next_steps"][1:]
             }
-        
+
+        # Async Execution via Mailbox
         self.mailbox.send(sub_agent_id, {
             "id": f"task_{state['agent_id']}",
             "sender": state["agent_id"],
@@ -188,21 +195,31 @@ class SupervisorAgent:
             "next_steps": state["next_steps"][1:] 
         }
 
-    def abort_node(self, state: AgentState) -> Dict[str, Any]:
-        return {"messages": [{"role": "system", "content": f"ABORTING: Loop detected for {state['role']} agent."}]}
+    def _should_continue(self, state: AgentState) -> str:
+        # Check for infinite loops
+        if state["node_counts"].get("plan", 0) > 10:
+            return "abort"
+        
+        strategy = state.get("metadata", {}).get("strategy")
+        if strategy == ExecutionStrategy.DECOMPOSE:
+            return "generate_prompt"
+        elif strategy == ExecutionStrategy.TOOL_USE:
+            return "tools"
+        return END
 
-    def dummy_tool_node(self, state: AgentState) -> Dict[str, Any]:
-        return {"messages": [{"role": "system", "content": "Tool execution simulation."}]}
+    def _route_after_spawn(self, state: AgentState) -> str:
+        """Determines if we should spawn another sub-agent or return to planning."""
+        if state.get("next_steps"):
+            return "generate_prompt"
+        return "plan" # Return to plan to evaluate if we are done
 
     def build_graph(self, checkpointer: Optional[BaseCheckpointSaver] = None, tool_node: Optional[Any] = None) -> Any:
         workflow = StateGraph(AgentState)
         workflow.add_node("plan", self.planning_node)
         workflow.add_node("generate_prompt", self.generate_prompt_node)
         workflow.add_node("spawn", self.spawning_node)
-        workflow.add_node("abort", self.abort_node)
-        
-        # Always add a 'tools' node, using a dummy if none provided
-        workflow.add_node("tools", tool_node or self.dummy_tool_node)
+        workflow.add_node("abort", lambda s: {"messages": [{"role": "system", "content": "ABORTING: Repetition limit reached."}]})
+        workflow.add_node("tools", tool_node or (lambda s: {"messages": [{"role": "system", "content": "Tool node stub."}]}))
 
         workflow.set_entry_point("plan")
         
@@ -218,7 +235,7 @@ class SupervisorAgent:
         )
         
         workflow.add_edge("generate_prompt", "spawn")
-        workflow.add_edge("spawn", "plan")
+        workflow.add_conditional_edges("spawn", self._route_after_spawn)
         workflow.add_edge("tools", "plan")
         workflow.add_edge("abort", END)
         
