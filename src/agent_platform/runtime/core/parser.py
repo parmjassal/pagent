@@ -8,36 +8,51 @@ logger = logging.getLogger(__name__)
 def robust_json_parser(text: str) -> Dict[str, Any]:
     """
     Attempts to extract and parse JSON from a string that might contain 
-    extra text, reasoning tags (like <think>), or markdown code blocks.
+    extra text, reasoning tags (like <think> or <thought>), or markdown code blocks.
     """
-    # 1. Strip reasoning tags like <think>...</think>
-    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+    # 1. Strip reasoning tags like <think>...</think> or <thought>...</thought>
+    text = re.sub(r'<(think|thought)>.*?</\1>', '', text, flags=re.DOTALL | re.IGNORECASE)
     
     # 2. Try to find JSON block in markdown code fences
-    code_block_match = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
-    if code_block_match:
+    # Prioritize ```json blocks
+    json_block_matches = re.findall(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+    for block in json_block_matches:
         try:
-            return json.loads(code_block_match.group(1))
+            return json.loads(block)
         except json.JSONDecodeError:
-            pass
+            continue
             
-    # 3. Try generic code block if json one failed
-    generic_block_match = re.search(r'```\s*(.*?)\s*```', text, re.DOTALL)
-    if generic_block_match:
-        try:
-            return json.loads(generic_block_match.group(1))
-        except json.JSONDecodeError:
-            pass
-
-    # 4. Try to find the first '{' and last '}'
+    # 3. Try to find the first '{' and last '}'
     try:
         start_idx = text.find('{')
         end_idx = text.rfind('}')
         if start_idx != -1 and end_idx != -1:
             json_str = text[start_idx:end_idx+1]
+            # Try to fix common issues like trailing commas before closing braces
+            # Simple regex to fix common "trailing comma in object"
+            json_str = re.sub(r',\s*\}', '}', json_str)
+            # Simple regex to fix common "trailing comma in array"
+            json_str = re.sub(r',\s*\]', ']', json_str)
             return json.loads(json_str)
     except json.JSONDecodeError:
         pass
+
+    # 4. Heuristic: If it's a chatty response with no JSON, try to extract key fields manually
+    # Looking for "thought_process": "...", "strategy": "..."
+    # This is very loose and might not work for all models
+    extracted = {}
+    
+    # Try to find "thought_process": "..." or thought_process is ...
+    thought_match = re.search(r'"?thought_process"?\s*(?::|is)\s*"?(.*?)"?(?:\s*and|,|\.|$)', text, re.DOTALL | re.IGNORECASE)
+    if thought_match:
+        extracted["thought_process"] = thought_match.group(1).strip()
+    
+    strategy_match = re.search(r'"?strategy"?\s*(?::|is)\s*"?(decompose|tool_use|finish)"?', text, re.IGNORECASE)
+    if strategy_match:
+        extracted["strategy"] = strategy_match.group(1).lower()
+        
+    if "thought_process" in extracted and "strategy" in extracted:
+        return extracted
 
     # 5. Last resort: raw parse
     return json.loads(text)

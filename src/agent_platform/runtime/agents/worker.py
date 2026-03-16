@@ -57,7 +57,9 @@ class WorkerAgent:
         elif strategy == ExecutionStrategy.FINISH:
             return END
         
-        return END
+        # If strategy is missing (due to parsing error in reasoning_node), 
+        # retry reasoning (up to threshold).
+        return "reason"
 
     async def reasoning_node(self, state: AgentState) -> AgentState:
         """Invokes the LLM to decide on a tool-use or finish strategy."""
@@ -87,7 +89,14 @@ class WorkerAgent:
                 result = WorkerResult.model_validate(parsed)
             except Exception as e:
                 logger.error(f"Worker failed to parse JSON: {response.content}")
-                return {"messages": [{"role": "user", "content": f"[System] Parse Error: {e}"}], "metadata": {"strategy": ExecutionStrategy.FINISH}}
+                # Provide a corrective message back to the LLM
+                return {
+                    "messages": [
+                        {"role": "assistant", "content": response.content},
+                        {"role": "user", "content": f"[System] Error: Your response could not be parsed as JSON. You MUST return ONLY a valid JSON object conforming to the schema. Do not include any text outside the JSON block. Error detail: {e}"}
+                    ],
+                    "node_counts": {"reason": 1}
+                }
         else:
             # Already a dict or object
             result = WorkerResult.model_validate(response)

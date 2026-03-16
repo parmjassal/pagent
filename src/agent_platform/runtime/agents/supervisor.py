@@ -94,8 +94,19 @@ class SupervisorAgent:
                 result = response
             elif hasattr(response, "content"):
                 # Handle AIMessage
-                parsed = robust_json_parser(response.content)
-                result = PlanningResult.model_validate(parsed)
+                try:
+                    parsed = robust_json_parser(response.content)
+                    result = PlanningResult.model_validate(parsed)
+                except Exception as e:
+                    logger.error(f"Planning failed to parse JSON: {response.content}")
+                    # Corrective message back to the LLM
+                    return {
+                        "messages": [
+                            {"role": "assistant", "content": response.content},
+                            {"role": "user", "content": f"[System] Error: Your response could not be parsed as JSON. You MUST return ONLY a valid JSON object conforming to the schema. Error detail: {e}"}
+                        ],
+                        "node_counts": {"plan": 1}
+                    }
             else:
                 # Fallback for dicts
                 result = PlanningResult.model_validate(response)
@@ -257,7 +268,11 @@ class SupervisorAgent:
             return "generate_prompt"
         elif strategy == ExecutionStrategy.TOOL_USE:
             return "tools"
-        return END
+        elif strategy == ExecutionStrategy.FINISH:
+            return END
+        
+        # If strategy is missing (parsing failed), retry
+        return "plan"
 
     def _route_after_spawn(self, state: AgentState) -> str:
         """Determines if we should spawn another sub-agent or return to planning."""
@@ -282,6 +297,7 @@ class SupervisorAgent:
                 "generate_prompt": "generate_prompt", 
                 "tools": "tools",
                 "abort": "abort",
+                "plan": "plan",
                 END: END
             }
         )
