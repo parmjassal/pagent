@@ -72,3 +72,6 @@ Every log entry **must** include:
 
 ### Mailbox Rule
 - **Isolation:** Agents communicate **only** through mailbox messages. Direct inter-agent logic calls are prohibited.
+
+### Stability First
+- **Fundamental Integrity:** Never perform structural changes that risk breaking functional tools (like `ls`). If an LLM call fails, investigate tool manifests and prompt engineering before assuming the platform logic is at fault.

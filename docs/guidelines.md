@@ -32,6 +32,13 @@ For any architectural change, new component, or complex logic update, the agent 
 - **Persistence:** Every session must maintain a `platform.log` file in its root directory.
 
 ## Code Principles
+### Stability & Integrity
+- **No Disastrous Changes:** Do not perform large-scale structural refactors if existing components (like `ls`) are working fine. If a component appears to fail, investigate the *caller* (e.g., LLM hallucinations) before modifying the *platform*.
+- **Empirical Validation:** Before "fixing" a supposed bug, reproduce it with an integration test. Never assume a platform tool is broken based on a single failed LLM call.
+- **Protocol Compliance:** Always maintain strict OpenAI Chat Completion schema compatibility. Never inject `system` or `tool` roles in a way that violates sequential ordering.
+- **Incremental Refinement:** Prefer surgical updates over architectural shifts.
+
+### Context & Logic
 - **Isolation-first:** Strictly bounded filesystem and process contexts.
 - **Strategic Skepticism:** No structural change without identifying potential failure modes.
 - **Service-Ready:** All components must handle `user_id` and `session_id`.
