@@ -48,11 +48,23 @@ class AgentToolNode:
             log_msg = f"[System] Tool '{tool_name}' failed{code_suffix}."
 
         # 4. Return State Update with Schema Compliance
-        # If we have a real tool_call_id, use the 'tool' role.
-        # Otherwise, fallback to 'user' role to avoid 400 Bad Request on strict APIs.
-        if tool_call_id:
+        # Strict APIs (e.g. ModelArts/OpenAI) require that a 'tool' role message MUST be
+        # preceded by an 'assistant' message containing the corresponding 'tool_calls'.
+        last_msg = state["messages"][-1] if state["messages"] else {}
+        
+        # Validate if we can safely use the 'tool' role
+        can_use_tool_role = False
+        if tool_call_id and last_msg.get("role") == "assistant" and "tool_calls" in last_msg:
+            # Check if the tool_call_id matches any of the calls in the preceding message
+            calls = last_msg.get("tool_calls", [])
+            if any(c.get("id") == tool_call_id for c in calls):
+                can_use_tool_role = True
+
+        if can_use_tool_role:
             tool_msg = {"role": "tool", "name": tool_name, "content": content, "tool_call_id": tool_call_id}
         else:
+            if tool_call_id:
+                logger.warning(f"Tool call ID {tool_call_id} provided, but preceding assistant message missing tool_calls metadata. Falling back to 'user' role for result.")
             # Present as a system observation to the agent
             tool_msg = {"role": "user", "content": f"[Tool Result: {tool_name}]\n{content}"}
 

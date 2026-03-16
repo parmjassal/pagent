@@ -48,7 +48,8 @@ class UnitCompiler:
             agent = SupervisorAgent(
                 self.factory, self.mailbox, self.generator,
                 llm=llm,
-                unit_compiler=self # Self-reference for recursion
+                unit_compiler=self, # Self-reference for recursion
+                result_hook=self.result_hook
             )
             tool_node = AgentToolNode(self.dispatcher)
             return agent.build_graph(checkpointer=checkpointer, tool_node=tool_node)
@@ -57,7 +58,8 @@ class UnitCompiler:
             tool_node = AgentToolNode(self.dispatcher)
             agent = WorkerAgent(
                 tool_node,
-                llm=llm
+                llm=llm,
+                result_hook=self.result_hook
             )
             return agent.build_graph(checkpointer=checkpointer)
         

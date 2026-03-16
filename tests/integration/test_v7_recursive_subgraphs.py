@@ -60,7 +60,18 @@ async def test_v7_recursive_subgraph_invocation(v7_env):
     env = v7_env
     supervisor = env["supervisor"]
     
-    state = create_initial_state("super", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"), role=AgentRole.SUPERVISOR)
+    agent_dir = env["session_path"] / "agents" / "super"
+    agent_dir.mkdir(parents=True, exist_ok=True)
+    inbox = agent_dir / "inbox"
+    outbox = agent_dir / "outbox"
+    todo = agent_dir / "todo"
+    
+    state = create_initial_state(
+        "super", env["user_id"], env["session_id"], 
+        inbox, outbox, 
+        todo_path=todo,
+        role=AgentRole.SUPERVISOR
+    )
     
     # 1. PLAN
     decomp_res = await supervisor.planning_node(state)

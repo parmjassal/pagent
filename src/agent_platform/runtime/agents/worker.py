@@ -25,10 +25,12 @@ class WorkerAgent:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         llm: Optional[Any] = None,
-        tool_manifest: Optional[str] = None
+        tool_manifest: Optional[str] = None,
+        result_hook: Optional[Any] = None
     ):
         self.tool_node = tool_node
         self.tool_manifest = tool_manifest
+        self.result_hook = result_hook
         self.parser = JsonOutputParser(pydantic_object=WorkerResult)
         
         if llm:
@@ -117,17 +119,37 @@ class WorkerAgent:
                 tc_dump["id"] = tool_call_id
                 
             metadata_update["next_tool_call"] = tc_dump
+            
+            assistant_msg = {"role": "assistant", "content": result.thought_process}
+            if tool_call_id:
+                # Reconstruct tool_calls metadata for history schema compliance
+                assistant_msg["tool_calls"] = [{
+                    "id": tool_call_id,
+                    "type": "function",
+                    "function": {
+                        "name": result.tool_call.name,
+                        "arguments": json.dumps(result.tool_call.args)
+                    }
+                }]
+
             return {
                 "role": state["role"],
-                "messages": [{"role": "assistant", "content": result.thought_process}],
+                "messages": [assistant_msg],
                 "metadata": metadata_update,
                 "node_counts": {"reason": 1}
             }
 
+        final_answer = result.final_answer or "Task finished."
+        if self.result_hook:
+            # ResultHook expects (agent_id, result)
+            processed_result = self.result_hook.process_result(state["agent_id"], final_answer)
+        else:
+            processed_result = {"type": "inline", "content": final_answer}
+
         return {
             "role": state["role"],
             "messages": [{"role": "assistant", "content": result.thought_process}],
-            "final_result": {"content": result.final_answer or "Task finished."},
+            "final_result": processed_result,
             "metadata": metadata_update,
             "node_counts": {"reason": 1}
         }

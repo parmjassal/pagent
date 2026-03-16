@@ -31,7 +31,8 @@ class SupervisorAgent:
         llm: Any,
         context_store: Optional[ContextStore] = None,
         unit_compiler: Optional[Any] = None, # For recursive execution
-        tool_manifest: Optional[str] = None
+        tool_manifest: Optional[str] = None,
+        result_hook: Optional[Any] = None
     ):
         self.agent_factory = agent_factory
         self.mailbox = mailbox
@@ -40,6 +41,7 @@ class SupervisorAgent:
         self.context_store = context_store
         self.unit_compiler = unit_compiler
         self.tool_manifest = tool_manifest
+        self.result_hook = result_hook
         self.parser = JsonOutputParser(pydantic_object=PlanningResult)
 
     async def planning_node(self, state: AgentState) -> AgentState:
@@ -62,10 +64,9 @@ class SupervisorAgent:
                     state["role"]
                 )
 
-        # 1. Loop Prevention: If we already have next_steps, don't re-plan, just continue
-        if state.get("next_steps"):
-            logger.info(f"Agent {state['agent_id']} already has next_steps. Continuing with current plan.")
-            return {"node_counts": {"plan": 1}}
+        # 1. Clear previous next_steps when re-planning to allow pivoting
+        # next_steps will be repopulated if the LLM still wants them
+        state["next_steps"] = []
 
         # 2. Resolve Template
         session_path = self.agent_factory.workspace.get_session_dir(state["user_id"], state["session_id"])
@@ -75,9 +76,16 @@ class SupervisorAgent:
         if template_path.exists():
             system_instruction = template_path.read_text()
 
-        # 3. Inject Tool Manifest if available
+        # 3. Inject Context (Tools and TODO history)
         if self.tool_manifest:
             system_instruction = f"{system_instruction}\n\n{self.tool_manifest}"
+        
+        # Inject TODO state for execution history
+        todo_mgr = TODOManager(state["todo_path"].parent)
+        all_tasks = todo_mgr.list_tasks()
+        if all_tasks:
+            todo_summary = "\n".join([f"- [{t.status}] {t.assigned_to}: {t.title}" for t in all_tasks])
+            system_instruction = f"{system_instruction}\n\n## Execution History (TODO List):\n{todo_summary}\n"
 
         # 4. Invoke LLM
         prompt = [
@@ -120,20 +128,32 @@ class SupervisorAgent:
         }
 
         if result.strategy == ExecutionStrategy.DECOMPOSE and result.sub_tasks:
-            todo_mgr = TODOManager(state["todo_path"].parent)
             next_steps = []
+            existing_agent_ids = [t.assigned_to for t in all_tasks]
+            
             for task_def in result.sub_tasks:
-                todo_mgr.add_task(ScopedTask(
-                    title=f"Task for {task_def.agent_id}",
-                    description=task_def.instructions,
-                    assigned_to=task_def.agent_id,
-                    metadata={"role": task_def.role}
-                ))
-                next_steps.append(task_def.agent_id)
+                # Only add if not already in TODO or completed
+                if task_def.agent_id not in existing_agent_ids:
+                    todo_mgr.add_task(ScopedTask(
+                        title=f"Task for {task_def.agent_id}",
+                        description=task_def.instructions,
+                        assigned_to=task_def.agent_id,
+                        metadata={"role": task_def.role}
+                    ))
+                    next_steps.append(task_def.agent_id)
+                else:
+                    logger.info(f"Skipping redundant task for {task_def.agent_id}")
             
             # Store sub-tasks details in metadata for the generator node
             metadata_update["sub_tasks_config"] = [t.model_dump() for t in result.sub_tasks]
             
+            if not next_steps:
+                # If all suggested tasks were redundant, ask LLM to re-evaluate or finish
+                return {
+                    "messages": [{"role": "user", "content": "[System] All proposed sub-tasks are already in progress or completed. Please provide new tasks or finish."}],
+                    "node_counts": {"plan": 1}
+                }
+
             return {
                 "messages": [{"role": "assistant", "content": result.thought_process}],
                 "next_steps": next_steps,
@@ -146,23 +166,45 @@ class SupervisorAgent:
             tool_call_id = None
             if hasattr(response, "tool_calls") and response.tool_calls:
                 tool_call_id = response.tool_calls[0].get("id")
-            elif hasattr(response, "id"):
-                tool_call_id = response.id
             
             tc_dump = result.tool_call.model_dump()
             if tool_call_id:
                 tc_dump["id"] = tool_call_id
 
             metadata_update["next_tool_call"] = tc_dump
+
+            assistant_msg = {"role": "assistant", "content": result.thought_process}
+            if tool_call_id:
+                # If we use tool_call_id, we MUST provide tool_calls in the assistant message 
+                # to satisfy strict API schemas (e.g. ModelArts, some OpenAI versions).
+                assistant_msg["tool_calls"] = [{
+                    "id": tool_call_id,
+                    "type": "function",
+                    "function": {
+                        "name": result.tool_call.name,
+                        "arguments": json.dumps(result.tool_call.args)
+                    }
+                }]
+
             return {
-                "messages": [{"role": "assistant", "content": result.thought_process}],
+                "messages": [assistant_msg],
                 "metadata": metadata_update,
+                "next_steps": [],
                 "node_counts": {"plan": 1}
             }
+
+        # Finish strategy: Provide a final result
+        final_answer = result.thought_process or "All tasks completed."
+        if self.result_hook:
+            processed_result = self.result_hook.process_result(state["agent_id"], final_answer)
+        else:
+            processed_result = {"type": "inline", "content": final_answer}
 
         return {
             "messages": [{"role": "assistant", "content": result.thought_process}],
             "metadata": metadata_update,
+            "next_steps": [],
+            "final_result": processed_result,
             "node_counts": {"plan": 1}
         }
 
@@ -243,9 +285,18 @@ class SupervisorAgent:
             child_final_state = await child_graph.ainvoke(child_initial_state)
             
             result_val = child_final_state.get("final_result", "Task completed.")
+            
+            # Format message based on result type
+            if isinstance(result_val, dict) and result_val.get("type") == "reference":
+                content = f"[System] Sub-agent {sub_agent_id} offloaded result to: {result_val.get('path')}\nSummary: {result_val.get('summary')}"
+            elif isinstance(result_val, dict) and result_val.get("type") == "inline":
+                content = f"[System] Sub-agent {sub_agent_id} returned: {result_val.get('content')}"
+            else:
+                content = f"[System] Sub-agent {sub_agent_id} returned: {result_val}"
+
             return {
                 "quota": SessionQuota(agent_count=1),
-                "messages": [{"role": "user", "content": f"[System] Sub-agent {sub_agent_id} returned: {result_val}"}],
+                "messages": [{"role": "user", "content": content}],
                 "next_steps": state["next_steps"][1:]
             }
 
@@ -282,10 +333,8 @@ class SupervisorAgent:
         return "plan"
 
     def _route_after_spawn(self, state: AgentState) -> str:
-        """Determines if we should spawn another sub-agent or return to planning."""
-        if state.get("next_steps"):
-            return "generate_prompt"
-        return "plan" # Return to plan to evaluate if we are done
+        """Determines if we should return to planning to observe result."""
+        return "plan"
 
     def build_graph(self, checkpointer: Optional[BaseCheckpointSaver] = None, tool_node: Optional[Any] = None) -> Any:
         workflow = StateGraph(AgentState)
@@ -310,7 +359,14 @@ class SupervisorAgent:
         )
         
         workflow.add_edge("generate_prompt", "spawn")
-        workflow.add_conditional_edges("spawn", self._route_after_spawn)
+        workflow.add_conditional_edges(
+            "spawn", 
+            self._route_after_spawn,
+            {
+                "generate_prompt": "generate_prompt",
+                "plan": "plan"
+            }
+        )
         workflow.add_edge("tools", "plan")
         workflow.add_edge("abort", END)
         
