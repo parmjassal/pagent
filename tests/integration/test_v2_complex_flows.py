@@ -73,6 +73,7 @@ async def test_v2_recursive_depth_and_handover(v2_env):
     )
     state["agent_id"] = "super/agent_l1" # Correct hierarchical ID for current agent
     state["current_depth"] = 1
+    state["next_steps"] = [] # Clear for re-planning
     
     res2 = await supervisor.planning_node(state)
     state.update(res2)
@@ -82,6 +83,7 @@ async def test_v2_recursive_depth_and_handover(v2_env):
     assert state["quota"].agent_count == 2
     # The spawned ID is parent/child -> super/agent_l1/agent_l2
     msg = env["mailbox"].receive("super/agent_l1/agent_l2")
+    assert msg, f"Message for super/agent_l1/agent_l2 not found in mailbox at {env['session_path']}/agents/super/agent_l1/agent_l2/inbox"
     assert msg["sender"] == "super/agent_l1"
 
 @pytest.mark.asyncio
@@ -121,4 +123,4 @@ async def test_v2_session_quota_enforcement(v2_env):
     # 3 (Fail)
     state["next_steps"] = ["s3"]
     res3 = await supervisor.spawning_node(state)
-    assert "Failed to spawn super/s3" in res3["messages"][0]["content"]
+    assert "Failed to spawn super/s3: Quota or Depth limit reached." in res3["messages"][0]["content"]

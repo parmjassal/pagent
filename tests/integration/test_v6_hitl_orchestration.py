@@ -42,9 +42,8 @@ def test_v6_hitl_suspend_and_resume(hitl_env):
     conn = sqlite3.connect(db_path, check_same_thread=False)
     checkpointer = SqliteSaver(conn)
     
-    # 2. Setup Supervisor with a Mocked LLM that triggers an approval
-    # (In this test, we'll manually call the HITL submission to simulate an interrupt node)
-    supervisor = SupervisorAgent(env["factory"], env["mailbox"], None, api_key="dummy")
+    # 2. Setup Supervisor with a Mocked LLM
+    supervisor = SupervisorAgent(env["factory"], env["mailbox"], None, llm=MagicMock())
     graph = supervisor.build_graph(checkpointer=checkpointer)
     
     initial_state = create_initial_state(agent_id, env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"))

@@ -141,12 +141,19 @@ class SupervisorAgent:
         sub_tasks = state.get("metadata", {}).get("sub_tasks_config", [])
         next_role = next((t["role"] for t in sub_tasks if t["agent_id"] == raw_sub_id), AgentRole.WORKER)
 
-        self.agent_factory.create_agent(
+        new_agent_state = self.agent_factory.create_agent(
             user_id=state["user_id"],
             session_id=state["session_id"],
             agent_id=sub_agent_id,
-            current_quota=state["quota"]
+            current_quota=state["quota"],
+            parent_depth=state["current_depth"]
         )
+
+        if not new_agent_state:
+            return {
+                "messages": [{"role": "system", "content": f"Failed to spawn {sub_agent_id}: Quota or Depth limit reached."}],
+                "next_steps": state["next_steps"][1:]
+            }
 
         # Handle Recursive Execution if UnitCompiler provided
         if self.unit_compiler:
@@ -162,7 +169,7 @@ class SupervisorAgent:
                 **state,
                 "agent_id": sub_agent_id,
                 "role": next_role,
-                "messages": [SystemMessage(content=prompt)],
+                "messages": [SystemMessage(content=prompt or "Process task.")],
                 "inbox_path": child_inbox,
                 "outbox_path": child_outbox,
                 "todo_path": child_todo,
@@ -188,6 +195,7 @@ class SupervisorAgent:
             "payload": {"instructions": state.get("metadata", {}).get("current_task_instructions")},
             "role": next_role
         })
+        print(f"DEBUG: Agent {state['agent_id']} sent task to {sub_agent_id}")
 
         return {
             "quota": SessionQuota(agent_count=1),

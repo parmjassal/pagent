@@ -2,32 +2,36 @@ import asyncio
 import logging
 import aiosqlite
 import os
+import json
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langchain_openai import ChatOpenAI
+
 from .workspace import WorkspaceContext
 from .mailbox import Mailbox, FilesystemMailboxProvider
 from .agent_factory import AgentFactory
-from ..agents.supervisor import SupervisorAgent
-from ..agents.generator import SystemGeneratorAgent
-from ..orch.state import create_initial_state
-from .dispatcher import ToolRegistry, ToolDispatcher, ToolSource
+from .dispatcher import ToolDispatcher, ToolRegistry
 from .sandbox import ProcessSandboxRunner
 from .guardrails import GuardrailManager
-from .todo import TODOManager, ScopedTask
-from ..storage.todo_tool import TODOTool
-from .tools.filesystem import FilesystemTools
-from .context_store import FilesystemContextStore
+from .todo import TODOManager
+from ..agents.supervisor import SupervisorAgent
+from ..agents.worker import WorkerAgent
+from ..agents.generator import SystemGeneratorAgent
+from ..orch.state import create_initial_state, AgentRole
+from ..orch.tool_node import AgentToolNode
+from ..core.tools.filesystem import FilesystemTools
+from ..core.context_store import FilesystemContextStore
 from ..storage.context_tool import ContextTools
+from ..storage.todo_tool import TODOTool
+from ..core.http_client import get_platform_http_client
 
 logger = logging.getLogger(__name__)
 
 class AutonomousScheduler:
     """
-    The background engine that monitors mailboxes and triggers agent execution.
-    Turns the static skeleton into a self-driving platform.
+    Background scheduler that monitors mailboxes and triggers LangGraph agents.
     """
-
     def __init__(
         self, 
         workspace: WorkspaceContext, 
@@ -40,22 +44,21 @@ class AutonomousScheduler:
         self.user_id = user_id
         self.session_id = session_id
         self.session_path = workspace.get_session_dir(user_id, session_id)
-        
-        self.factory = AgentFactory(workspace)
         self.mailbox = Mailbox(FilesystemMailboxProvider(self.session_path))
-        
+        self.factory = AgentFactory(workspace)
         self.model_config = {
             "model_name": model_name,
             "openai_base_url": openai_base_url
         }
-
+        # Shared generator for the session
         self.generator = SystemGeneratorAgent(
-            workspace=workspace,
             model_name=model_name,
-            base_url=openai_base_url
+            base_url=openai_base_url,
+            workspace=workspace
         )
 
     async def run_forever(self):
+        """Main loop of the scheduler."""
         logger.info(f"Scheduler started for session {self.session_id}")
         while True:
             try:
@@ -70,11 +73,9 @@ class AutonomousScheduler:
         if not agents_root.exists():
             return
 
-        # Use os.walk to find all agent directories (those with an 'inbox')
         for root, dirs, files in os.walk(agents_root):
             root_path = Path(root)
             if (root_path / "inbox").exists():
-                # The agent_id is the relative path from agents_root
                 agent_id = str(root_path.relative_to(agents_root))
                 await self._process_agent(agent_id)
 
@@ -84,20 +85,20 @@ class AutonomousScheduler:
             return
 
         logger.info(f"Scheduler: Triggering execution for agent '{agent_id}'")
-
+        
         agent_dir = self.workspace.get_agent_dir(self.user_id, self.session_id, agent_id)
+        db_path = agent_dir / "state.db"
+        
+        # Prepare paths for state
         inbox_path = agent_dir / "inbox"
         outbox_path = agent_dir / "outbox"
+        todo_path = agent_dir / "todo"
         knowledge_path = self.session_path / "knowledge"
-        todo_path = agent_dir / "todo" # Corrected: Agent-level TODO
 
-        db_path = self.factory.get_agent_db_path(self.user_id, self.session_id, agent_id)
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        
         async with aiosqlite.connect(db_path) as conn:
             checkpointer = AsyncSqliteSaver(conn)
-            await checkpointer.setup()
             
+            # Setup Tooling
             registry = ToolRegistry(self.session_path)
             
             # 1. TODO Tools
@@ -112,37 +113,50 @@ class AutonomousScheduler:
             registry.register_native("read_file", fs_tools.read_file)
             registry.register_native("write_file", fs_tools.write_file)
             
-            # 3. Context Store & Tools (Hierarchical)
             context_store = FilesystemContextStore(self.session_path)
             context_tools = ContextTools(context_store)
-            registry.register_native("list_context", context_tools.list_context)
-            registry.register_native("read_context", context_tools.read_context)
             registry.register_native("update_context", context_tools.update_context)
-            registry.register_native("search_context", context_tools.search_context)
 
-            sandbox = ProcessSandboxRunner()
-            guardrails = GuardrailManager() 
-            dispatcher = ToolDispatcher(registry, sandbox, guardrails)
+            dispatcher = ToolDispatcher(registry, ProcessSandboxRunner(), GuardrailManager())
+            tool_node = AgentToolNode(dispatcher)
+
+            # Resolve Agent Type (Role) from message or defaults
+            role = inbox_msg.get("role", AgentRole.WORKER)
             
-            agent_instance = SupervisorAgent(
-                self.factory, self.mailbox, self.generator, 
-                model_name=self.model_config["model_name"],
-                base_url=self.model_config["openai_base_url"]
+            # Initialize LLM
+            http_client = get_platform_http_client()
+            llm = ChatOpenAI(
+                model=self.model_config["model_name"],
+                openai_api_base=self.model_config["openai_base_url"],
+                http_client=http_client,
+                temperature=0
             )
-            
-            graph = agent_instance.build_graph(checkpointer=checkpointer)
+
+            if role == AgentRole.SUPERVISOR:
+                agent_instance = SupervisorAgent(
+                    self.factory, self.mailbox, self.generator, llm=llm
+                )
+                graph = agent_instance.build_graph(checkpointer=checkpointer, tool_node=tool_node)
+            else:
+                agent_instance = WorkerAgent(tool_node, llm=llm)
+                graph = agent_instance.build_graph(checkpointer=checkpointer)
+
             config = {"configurable": {"thread_id": agent_id}}
             current_state = await graph.aget_state(config)
             
             if not current_state.values:
                 initial_state = create_initial_state(
                     agent_id, self.user_id, self.session_id,
-                    inbox_path, outbox_path, knowledge_path, todo_path
+                    inbox_path=inbox_path,
+                    outbox_path=outbox_path,
+                    todo_path=todo_path,
+                    role=role
                 )
-                initial_state["messages"] = [{"role": "user", "content": str(inbox_msg.get("payload", {}))}]
+                initial_state["messages"] = [{"role": "user", "content": json.dumps(inbox_msg.get("payload", {}))}]
                 await graph.ainvoke(initial_state, config=config)
             else:
                 await graph.ainvoke(None, config=config)
             
+            # Clear processed message
             for f in inbox_path.glob("*.json"):
                 f.unlink()
