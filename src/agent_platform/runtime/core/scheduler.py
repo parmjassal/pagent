@@ -136,7 +136,7 @@ class AutonomousScheduler:
             tool_manifest = registry.get_tool_manifest()
 
             # Resolve Agent Type (Role) from message or defaults
-            role = inbox_msg.get("role", AgentRole.WORKER)
+            role = inbox_msg.get("role", AgentRole.SUPERVISOR)
             
             # Initialize LLM
             http_client = get_platform_http_client()

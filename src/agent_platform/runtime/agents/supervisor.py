@@ -188,8 +188,13 @@ class SupervisorAgent:
         if not state["next_steps"]:
             return state
 
+        # Prepare IDs
         raw_sub_id = state["next_steps"][0]
-        sub_agent_id = f"{state['agent_id']}/{raw_sub_id}"
+        # Use hierarchical ID if not already prefixed
+        if "/" not in raw_sub_id:
+            sub_agent_id = f"{state['agent_id']}/{raw_sub_id}"
+        else:
+            sub_agent_id = raw_sub_id
         
         prompt = state.get("generated_output")
         # Find role for this specific sub-agent
@@ -216,9 +221,10 @@ class SupervisorAgent:
             child_graph = self.unit_compiler.compile_unit(next_role)
             
             # Prepare child state
-            child_inbox = self.agent_factory.workspace.get_agent_dir(state["user_id"], state["session_id"], sub_agent_id) / "inbox"
-            child_outbox = self.agent_factory.workspace.get_agent_dir(state["user_id"], state["session_id"], sub_agent_id) / "outbox"
-            child_todo = self.agent_factory.workspace.get_agent_dir(state["user_id"], state["session_id"], sub_agent_id) / "todo"
+            agent_dir = self.agent_factory.workspace.get_agent_dir(state["user_id"], state["session_id"], sub_agent_id)
+            child_inbox = agent_dir / "inbox"
+            child_outbox = agent_dir / "outbox"
+            child_todo = agent_dir / "todo"
             
             child_initial_state = {
                 **state,
@@ -230,7 +236,8 @@ class SupervisorAgent:
                 "todo_path": child_todo,
                 "current_depth": state["current_depth"] + 1,
                 "final_result": None,
-                "next_steps": []
+                "next_steps": [],
+                "node_counts": {} # Reset node counts for child
             }
             
             child_final_state = await child_graph.ainvoke(child_initial_state)
@@ -250,7 +257,7 @@ class SupervisorAgent:
             "payload": {"instructions": state.get("metadata", {}).get("current_task_instructions")},
             "role": next_role
         })
-        print(f"DEBUG: Agent {state['agent_id']} sent task to {sub_agent_id}")
+        logger.info(f"Agent {state['agent_id']} sent task to {sub_agent_id} via Mailbox")
 
         return {
             "quota": SessionQuota(agent_count=1),
@@ -260,7 +267,7 @@ class SupervisorAgent:
 
     def _should_continue(self, state: AgentState) -> str:
         # Check for infinite loops
-        if state["node_counts"].get("plan", 0) > 10:
+        if state["node_counts"].get("plan", 0) > 100:
             return "abort"
         
         strategy = state.get("metadata", {}).get("strategy")

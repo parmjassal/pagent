@@ -49,7 +49,7 @@ class WorkerAgent:
         strategy = state.get("metadata", {}).get("strategy")
         
         # Loop Check
-        if LoopMonitor.check_node_loop(state, "reason", threshold=10):
+        if LoopMonitor.check_node_loop(state, "reason", threshold=100):
             return "abort"
 
         if strategy == ExecutionStrategy.TOOL_USE:
