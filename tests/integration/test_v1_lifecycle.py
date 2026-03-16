@@ -20,9 +20,8 @@ def v1_env(tmp_path):
     root = tmp_path / ".pagent"
     workspace = WorkspaceContext(root=root)
     
-    # Global Resources setup
-    project_root = Path(__file__).parent.parent.parent
-    global_res_dir = project_root / "data" / "pagent_resources" / "global"
+    # Global Resources setup (ISOLATED)
+    global_res_dir = root / "global"
     global_res_dir.mkdir(parents=True, exist_ok=True)
     (global_res_dir / "prompts").mkdir(exist_ok=True)
     (global_res_dir / "prompts" / "generator_prompt.txt").write_text("MOCK GENERATOR TEMPLATE")
