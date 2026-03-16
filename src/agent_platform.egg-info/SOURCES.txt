@@ -11,10 +11,9 @@ src/agent_platform/runtime/bootstrap.py
 src/agent_platform/runtime/agents/__init__.py
 src/agent_platform/runtime/agents/fact_sheet_agent.py
 src/agent_platform/runtime/agents/generator.py
+src/agent_platform/runtime/agents/orchestrator.py
 src/agent_platform/runtime/agents/search_agent.py
-src/agent_platform/runtime/agents/supervisor.py
 src/agent_platform/runtime/agents/validator.py
-src/agent_platform/runtime/agents/worker.py
 src/agent_platform/runtime/core/__init__.py
 src/agent_platform/runtime/core/agent_factory.py
 src/agent_platform/runtime/core/context_store.py
@@ -24,12 +23,12 @@ src/agent_platform/runtime/core/hitl.py
 src/agent_platform/runtime/core/http_client.py
 src/agent_platform/runtime/core/lifecycle.py
 src/agent_platform/runtime/core/mailbox.py
+src/agent_platform/runtime/core/parser.py
 src/agent_platform/runtime/core/resource_manager.py
 src/agent_platform/runtime/core/sandbox.py
 src/agent_platform/runtime/core/scheduler.py
 src/agent_platform/runtime/core/schema.py
 src/agent_platform/runtime/core/todo.py
-src/agent_platform/runtime/core/tool_registry_defaults.py
 src/agent_platform/runtime/core/workspace.py
 src/agent_platform/runtime/core/tools/filesystem.py
 src/agent_platform/runtime/core/tools/write_tool.py
@@ -48,10 +47,12 @@ src/agent_platform/runtime/storage/search_tool.py
 src/agent_platform/runtime/storage/semantic_search.py
 src/agent_platform/runtime/storage/todo_tool.py
 tests/test_agent_factory.py
+tests/test_context_refinement.py
 tests/test_guardrails.py
 tests/test_knowledge.py
 tests/test_lifecycle.py
 tests/test_loop_detection.py
+tests/test_parser_robustness.py
 tests/test_placeholder.py
 tests/test_quota.py
 tests/test_roles.py
@@ -60,5 +61,6 @@ tests/test_sandbox.py
 tests/test_semantic_search.py
 tests/test_state.py
 tests/test_supervisor.py
+tests/test_supervisor_v2.py
 tests/test_todo.py
 tests/test_tool_node.py

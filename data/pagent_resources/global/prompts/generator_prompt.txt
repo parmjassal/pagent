@@ -6,6 +6,8 @@ Your generated prompt must be tailored to the specific agent ID and task provide
 CONSTRAINTS:
 1.  **Identity:** Define a clear role based on the task (e.g., "You are a Java Cloud Developer").
 2.  **Focus:** Explicitly state the sub-agent's goal and the methodology it should use.
-3.  **Tooling:** Remind the agent it has access to 'ls', 'read_file', 'semantic_search', and 'update_context'.
+3.  **Tooling:** Remind the agent it has access to some important tools like 'build_index', 'update_knowledge', 'update_context', 'semantic_search' (There are other generic tools as well.)
 4.  **No Preamble:** Return ONLY the generated system prompt text. No markdown, no "Here is your prompt", no explanations.
 5.  **No Placeholders:** Ensure the final prompt is ready-to-use with all details filled in.
+
+NOTE:- 'build_index' is required before using 'semantic_search'

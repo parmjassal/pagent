@@ -115,7 +115,11 @@ class AutonomousScheduler:
 
             context_tools = ContextTools(self.context_store, knowledge_path=knowledge_path)
             registry.register_native("update_context", context_tools.update_context, source=ToolSource.CORE)
+            registry.register_native("list_context", context_tools.list_context, source=ToolSource.CORE)
             registry.register_native("update_knowledge", context_tools.update_knowledge, source=ToolSource.CORE)
+            registry.register_native("list_knowledge", context_tools.list_knowledge, source=ToolSource.CORE)
+            registry.register_native("fetch_knowledge", context_tools.fetch_knowledge, source=ToolSource.CORE)
+
 
             # 2. Filesystem & Discovery Tools (Priority 2)
             fs_tools = FilesystemTools(self.session_path)
@@ -219,7 +223,8 @@ class AutonomousScheduler:
                 await graph.ainvoke(initial_state, config=config)
             else:
                 await graph.ainvoke(None, config=config)
-            
+
+            logger.info(f"Work Done.")
             # Clear processed message
             for f in inbox_path.glob("*.json"):
                 f.unlink()

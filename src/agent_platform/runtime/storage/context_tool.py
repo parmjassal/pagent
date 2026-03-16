@@ -24,7 +24,7 @@ class ContextTools:
         return self.store.read_fact(state["agent_id"], fact_id)
 
     def update_context(self, state: AgentState, fact_id: str, content: str) -> str:
-        """Allows supervisors to add or update a fact in their own branch context (Flows Downward)."""
+        """Allows supervisors to add or update a fact in their own branch context. It is visible to only sub agents."""
         try:
             self.store.update_fact(state["agent_id"], fact_id, content, state["role"])
             return f"Successfully updated fact '{fact_id}' in branch global_context."
@@ -33,7 +33,7 @@ class ContextTools:
 
     def update_knowledge(self, state: AgentState, name: str, content: str) -> str:
         """
-        Promotes a result to Global Knowledge (Flows everywhere).
+        Promotes a result to Global Knowledge. It is visible to all agents.
         Ensures naming convention: [8-char-hex-prefix]_[contextual_name].json
         """
         if not self.knowledge_path:

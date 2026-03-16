@@ -79,9 +79,10 @@ class OrchestratorAgent:
         
         try:
             response = await self.llm.ainvoke(prompt)
+            logger.debug(f"Planning Result is {response}")   
             # Robust Parsing
             if hasattr(response, "content"):
-                parsed = robust_json_parser(response.content)
+                parsed = robust_json_parser(response.content) or ""
                 result = PlanningResult.model_validate(parsed)
             else:
                 result = PlanningResult.model_validate(response)
