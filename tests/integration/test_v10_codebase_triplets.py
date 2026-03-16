@@ -5,12 +5,11 @@ from agent_platform.runtime.core.workspace import WorkspaceContext
 from agent_platform.runtime.core.resource_manager import SimpleCopyResourceManager, SessionInitializer
 from agent_platform.runtime.core.agent_factory import AgentFactory
 from agent_platform.runtime.orch.state import create_initial_state, AgentRole
-from agent_platform.runtime.agents.supervisor import SupervisorAgent
-from agent_platform.runtime.agents.worker import WorkerAgent
+from agent_platform.runtime.agents.orchestrator import OrchestratorAgent
 from agent_platform.runtime.agents.generator import SystemGeneratorAgent
 from agent_platform.runtime.orch.unit_compiler import UnitCompiler
 from agent_platform.runtime.orch.result_hook import OffloadingResultHook
-from agent_platform.runtime.orch.models import PlanningResult, WorkerResult, ExecutionStrategy, SubAgentTask, ToolCall
+from agent_platform.runtime.orch.models import PlanningResult, ExecutionStrategy, SubAgentTask, ToolCall
 from agent_platform.runtime.core.mailbox import Mailbox, FilesystemMailboxProvider
 from agent_platform.runtime.core.dispatcher import ToolDispatcher, ToolRegistry
 from agent_platform.runtime.storage.search_tool import SearchTools
@@ -116,19 +115,19 @@ async def test_v10_triplet_extraction_workflow(v10_env):
     mock_work_llm = AsyncMock()
     mock_work_llm.ainvoke.side_effect = [
         # Worker Turn 1: Search Java
-        WorkerResult(
+        PlanningResult(
             thought_process="Searching Java logic.",
             strategy=ExecutionStrategy.TOOL_USE,
             tool_call=ToolCall(name="semantic_search", args={"query": "DynamoDB SQS"})
         ),
         # Worker Turn 2: Search Infra
-        WorkerResult(
+        PlanningResult(
             thought_process="Searching Terraform logic.",
             strategy=ExecutionStrategy.TOOL_USE,
             tool_call=ToolCall(name="semantic_search", args={"query": "lambda concurrency"})
         ),
         # Worker Turn 3: Final Answer
-        WorkerResult(
+        PlanningResult(
             thought_process="Extraction complete.",
             strategy=ExecutionStrategy.FINISH,
             final_answer="Extracted triplets for OrderProcessor."
@@ -143,10 +142,15 @@ async def test_v10_triplet_extraction_workflow(v10_env):
     class V10UnitCompiler(UnitCompiler):
         def compile_unit(self, role, checkpointer=None):
             tool_node = AgentToolNode(env["dispatcher"])
-            if role == AgentRole.SUPERVISOR:
-                return SupervisorAgent(env["factory"], env["mailbox"], mock_generator, llm=mock_sup_llm, unit_compiler=self).build_graph(checkpointer=checkpointer, tool_node=tool_node)
-            else:
-                return WorkerAgent(tool_node, llm=mock_work_llm).build_graph()
+            current_llm = mock_sup_llm if role == AgentRole.SUPERVISOR else mock_work_llm
+            agent = OrchestratorAgent(
+                env["factory"], env["mailbox"], mock_generator,
+                llm=current_llm,
+                unit_compiler=self, # For recursion
+                result_hook=env["result_hook"],
+                tool_manifest="MOCK TOOLS"
+            )
+            return agent.build_graph(checkpointer=checkpointer, tool_node=tool_node)
 
     compiler = V10UnitCompiler(env["factory"], env["mailbox"], mock_generator, env["dispatcher"], env["result_hook"])
     
@@ -164,6 +168,13 @@ async def test_v10_triplet_extraction_workflow(v10_env):
     
     graph = compiler.compile_unit(AgentRole.SUPERVISOR)
     final_state = await graph.ainvoke(initial_state, config={"configurable": {"thread_id": "v10_thread"}})
+
+    # DEBUG
+    for i, m in enumerate(final_state["messages"]):
+        if isinstance(m, dict):
+            print(f"MSG {i} [{m.get('role')}][DICT]: {str(m.get('content'))[:100]}")
+        else:
+            print(f"MSG {i} [{getattr(m, 'role', 'no_role')}][{type(m).__name__}]: {str(getattr(m, 'content', ''))[:100]}")
 
     # --- VERIFICATION ---
     
@@ -183,8 +194,15 @@ async def test_v10_triplet_extraction_workflow(v10_env):
     assert "(OrderProcessor, concurrency, 5)" in content
 
     # 2. Verify worker result was bubbled up
-    # Changed from 'system' to 'user' for API compatibility
-    assert any("[System] Sub-agent super/analyst_01 returned" in m["content"] for m in final_state["messages"] if m["role"] == "user")
+    # Orchestrator's collector_node adds: "[System] Task {task_id} finished: Sub-agent {full_id} returned: ..."
+    contents = []
+    for m in final_state["messages"]:
+        if isinstance(m, dict):
+            contents.append(str(m.get("content", "")))
+        else:
+            contents.append(str(getattr(m, "content", "")))
+            
+    assert any("finished" in c and "super/analyst_01" in c for c in contents)
     
     # 3. Verify semantic index exists
     assert (env["session_path"] / "semantic_index").exists()

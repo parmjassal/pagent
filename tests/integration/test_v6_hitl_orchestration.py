@@ -8,7 +8,7 @@ from agent_platform.runtime.core.workspace import WorkspaceContext
 from agent_platform.runtime.core.resource_manager import SimpleCopyResourceManager, SessionInitializer
 from agent_platform.runtime.core.agent_factory import AgentFactory
 from agent_platform.runtime.orch.state import create_initial_state
-from agent_platform.runtime.agents.supervisor import SupervisorAgent
+from agent_platform.runtime.agents.orchestrator import OrchestratorAgent
 from agent_platform.runtime.core.hitl import InteractionManager, HITLRequest, HITLResponse, InteractionStatus
 from agent_platform.runtime.core.mailbox import Mailbox, FilesystemMailboxProvider
 
@@ -42,8 +42,8 @@ def test_v6_hitl_suspend_and_resume(hitl_env):
     conn = sqlite3.connect(db_path, check_same_thread=False)
     checkpointer = SqliteSaver(conn)
     
-    # 2. Setup Supervisor with a Mocked LLM
-    supervisor = SupervisorAgent(env["factory"], env["mailbox"], None, llm=MagicMock())
+    # 2. Setup Orchestrator with a Mocked LLM
+    supervisor = OrchestratorAgent(env["factory"], env["mailbox"], MagicMock(), llm=MagicMock())
     graph = supervisor.build_graph(checkpointer=checkpointer)
     
     initial_state = create_initial_state(agent_id, env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"))

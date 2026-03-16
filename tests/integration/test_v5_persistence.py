@@ -8,7 +8,7 @@ from agent_platform.runtime.core.resource_manager import SimpleCopyResourceManag
 from agent_platform.runtime.core.agent_factory import AgentFactory
 from agent_platform.runtime.orch.state import create_initial_state, AgentRole
 from agent_platform.runtime.agents.generator import SystemGeneratorAgent
-from agent_platform.runtime.agents.supervisor import SupervisorAgent
+from agent_platform.runtime.agents.orchestrator import OrchestratorAgent
 from agent_platform.runtime.orch.models import PlanningResult, ExecutionStrategy, SubAgentTask
 from agent_platform.runtime.core.mailbox import Mailbox, FilesystemMailboxProvider
 
@@ -40,10 +40,11 @@ def persistence_env(tmp_path):
         )
     ]
 
-    mock_gen_llm = AsyncMock()
-    mock_gen_llm.ainvoke.return_value.content = "SYSTEM PROMPT"
+    # Generator output mock
+    mock_generator = AsyncMock()
+    mock_generator.generate_node.return_value = {"generated_output": "SYSTEM PROMPT"}
 
-    generator = SystemGeneratorAgent(llm=mock_gen_llm, workspace=workspace)
+    generator = mock_generator
     
     return {
         "user_id": user_id, "session_id": session_id, "session_path": session_path,
@@ -63,7 +64,7 @@ async def test_v5_graph_persistence_and_resume(persistence_env):
         checkpointer = AsyncSqliteSaver(conn)
         await checkpointer.setup()
         
-        supervisor = SupervisorAgent(env["factory"], env["mailbox"], env["generator"], llm=env["mock_llm"])
+        supervisor = OrchestratorAgent(env["factory"], env["mailbox"], env["generator"], llm=env["mock_llm"])
         graph = supervisor.build_graph(checkpointer=checkpointer)
 
         # Correct paths

@@ -6,7 +6,7 @@ from agent_platform.runtime.core.resource_manager import SimpleCopyResourceManag
 from agent_platform.runtime.core.agent_factory import AgentFactory
 from agent_platform.runtime.orch.state import create_initial_state, AgentRole
 from agent_platform.runtime.agents.generator import SystemGeneratorAgent
-from agent_platform.runtime.agents.supervisor import SupervisorAgent
+from agent_platform.runtime.agents.orchestrator import OrchestratorAgent
 from agent_platform.runtime.orch.models import PlanningResult, ExecutionStrategy, SubAgentTask
 from agent_platform.runtime.core.mailbox import Mailbox, FilesystemMailboxProvider
 
@@ -24,14 +24,17 @@ def integ_env(tmp_path):
     factory = AgentFactory(workspace)
     mailbox = Mailbox(FilesystemMailboxProvider(session_path))
     
-    mock_sup_llm = AsyncMock()
+    mock_llm = AsyncMock()
     # Mocking the first call to DECOMPOSE and subsequent to FINISH to stop the loop
-    mock_sup_llm.ainvoke.side_effect = [
+    # For Orchestrator, it returns to dispatcher then back to planner.
+    mock_llm.ainvoke.side_effect = [
+        # Call 1: Planner decides to DECOMPOSE
         PlanningResult(
             thought_process="Decomposing...",
             strategy=ExecutionStrategy.DECOMPOSE,
             sub_tasks=[SubAgentTask(agent_id="researcher_1", role=AgentRole.WORKER, instructions="Task")]
         ),
+        # Call 2: Planner sees researcher_1 finished (mocked) and finishes
         PlanningResult(
             thought_process="Done.",
             strategy=ExecutionStrategy.FINISH
@@ -41,17 +44,17 @@ def integ_env(tmp_path):
     mock_gen_llm.ainvoke.return_value.content = "SYSTEM PROMPT"
 
     generator = SystemGeneratorAgent(llm=mock_gen_llm, workspace=workspace)
-    supervisor = SupervisorAgent(factory, mailbox, generator, llm=mock_sup_llm)
+    orchestrator = OrchestratorAgent(factory, mailbox, generator, llm=mock_llm)
 
     return {
         "user_id": user_id, "session_id": session_id, "session_path": session_path,
-        "supervisor": supervisor, "mailbox": mailbox
+        "orchestrator": orchestrator, "mailbox": mailbox
     }
 
 @pytest.mark.asyncio
 async def test_v0_orchestration_flow(integ_env):
     env = integ_env
-    supervisor = env["supervisor"]
+    orchestrator = env["orchestrator"]
     
     # Correct paths within session
     agent_dir = env["session_path"] / "agents" / "super"
@@ -65,7 +68,7 @@ async def test_v0_orchestration_flow(integ_env):
         todo_path=todo,
         role=AgentRole.SUPERVISOR
     )
-    graph = supervisor.build_graph()
+    graph = orchestrator.build_graph()
     
     final_state = await graph.ainvoke(initial_state)
 

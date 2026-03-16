@@ -7,7 +7,7 @@ from agent_platform.runtime.core.agent_factory import AgentFactory
 from agent_platform.runtime.orch.state import create_initial_state, AgentRole
 from agent_platform.runtime.orch.quota import update_quota
 from agent_platform.runtime.agents.generator import SystemGeneratorAgent
-from agent_platform.runtime.agents.supervisor import SupervisorAgent
+from agent_platform.runtime.agents.orchestrator import OrchestratorAgent
 from agent_platform.runtime.agents.search_agent import SemanticSearchAgent
 from agent_platform.runtime.orch.models import PlanningResult, ExecutionStrategy, SubAgentTask
 from agent_platform.runtime.core.mailbox import Mailbox, FilesystemMailboxProvider
@@ -37,20 +37,23 @@ def repo_env(tmp_path):
         sub_tasks=[SubAgentTask(agent_id="analyst_agent", role=AgentRole.WORKER, instructions="Index and query.")]
     )
 
-    generator = SystemGeneratorAgent(llm=AsyncMock(), workspace=workspace)
-    supervisor = SupervisorAgent(factory, mailbox, generator, llm=mock_llm)
+    mock_gen_llm = AsyncMock()
+    mock_gen_llm.ainvoke.return_value.content = "SYSTEM PROMPT"
+    
+    generator = SystemGeneratorAgent(llm=mock_gen_llm, workspace=workspace)
+    orchestrator = OrchestratorAgent(factory, mailbox, generator, llm=mock_llm)
     search_agent = SemanticSearchAgent(workspace)
 
     return {
         "user_id": user_id, "session_id": session_id, "session_path": session_path,
-        "repo_path": repo_dir, "supervisor": supervisor, "search_agent": search_agent,
+        "repo_path": repo_dir, "orchestrator": orchestrator, "search_agent": search_agent,
         "mailbox": mailbox, "mock_llm": mock_llm
     }
 
 @pytest.mark.asyncio
 async def test_v3_repo_analysis_with_mocked_llm(repo_env):
     env = repo_env
-    supervisor = env["supervisor"]
+    orchestrator = env["orchestrator"]
     search_agent = env["search_agent"]
     
     user_id, session_id = env["user_id"], env["session_id"]
@@ -64,14 +67,19 @@ async def test_v3_repo_analysis_with_mocked_llm(repo_env):
         role=AgentRole.SUPERVISOR
     )
     
-    decomp_state = await supervisor.planning_node(state)
-    assert "analyst_agent" in decomp_state["next_steps"]
+    # 1. Plan
+    plan_res = await orchestrator.planner_node(state)
+    state.update(plan_res)
     env["mock_llm"].ainvoke.assert_called_once()
+    
+    # 2. Dispatch
+    disp_res = await orchestrator.dispatcher_node(state)
+    state.update(disp_res)
+    assert state["metadata"]["next_task"]["assigned_to"] == "analyst_agent"
 
-    state.update(decomp_state)
-    spawn_res = await supervisor.spawning_node(state)
-    # Corrected assertion based on actual log message
-    assert "Spawned super_01/analyst_agent via Mailbox" in spawn_res["messages"][-1]["content"]
+    # 3. Execute (Spawning)
+    exec_res = await orchestrator.executor_node(state)
+    assert "Spawned super_01/analyst_agent via Mailbox" in exec_res["metadata"]["task_result"]
 
     analyst_state = create_initial_state("analyst_agent", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"))
     analyst_state["metadata"]["target_folder"] = str(env["repo_path"])

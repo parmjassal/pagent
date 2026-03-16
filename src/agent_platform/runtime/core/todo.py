@@ -14,12 +14,19 @@ class TaskStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
 
+class TaskType(str, Enum):
+    TOOL = "tool"
+    AGENT = "agent"
+
 class ScopedTask(BaseModel):
     task_id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
+    type: TaskType = Field(default=TaskType.AGENT)
     title: str
     description: str
-    assigned_to: Optional[str] = None
+    assigned_to: Optional[str] = None # For AGENT type
+    payload: Dict[str, Any] = Field(default_factory=dict) # For TOOL type: {name, args}
     status: TaskStatus = TaskStatus.PENDING
+    result: Optional[Dict[str, Any]] = None # Persistent result from execution
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 class TODOManager:
@@ -49,12 +56,19 @@ class TODOManager:
                 logger.error(f"Failed to load task {path}: {e}")
         return tasks
 
-    def update_status(self, task_id: str, status: TaskStatus):
+    def update_status(self, task_id: str, status: TaskStatus, result: Optional[Dict[str, Any]] = None):
+        """Updates the status and optionally the result of an existing task."""
         path = self.root / f"task_{task_id}.json"
         if not path.exists():
-            raise FileNotFoundError(f"Task {task_id} not found.")
+            # Try to find by finding the file with this ID
+            found = list(self.root.glob(f"task_{task_id}.json"))
+            if not found:
+                raise FileNotFoundError(f"Task {task_id} not found.")
+            path = found[0]
         
         task = ScopedTask.model_validate_json(path.read_text())
         task.status = status
+        if result is not None:
+            task.result = result
         path.write_text(task.model_dump_json(indent=2))
         logger.info(f"Task {task_id} updated to {status}")

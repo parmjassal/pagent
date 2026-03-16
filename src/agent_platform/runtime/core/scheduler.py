@@ -15,8 +15,7 @@ from .dispatcher import ToolDispatcher, ToolRegistry
 from .sandbox import ProcessSandboxRunner
 from .guardrails import GuardrailManager, LLMPolicyGenerator
 from .todo import TODOManager
-from ..agents.supervisor import SupervisorAgent
-from ..agents.worker import WorkerAgent
+from ..agents.orchestrator import OrchestratorAgent
 from ..agents.generator import SystemGeneratorAgent, TaskType
 from ..orch.state import create_initial_state, AgentRole
 from ..orch.tool_node import AgentToolNode
@@ -193,26 +192,18 @@ class AutonomousScheduler:
                     }
             )
 
-            if role == AgentRole.SUPERVISOR:
-                agent_instance = SupervisorAgent(
-                    self.factory, 
-                    self.mailbox, 
-                    self.generator, 
-                    llm=llm,
-                    context_store=self.context_store,
-                    unit_compiler=unit_compiler,
-                    tool_manifest=tool_manifest,
-                    result_hook=result_hook
-                )
-                graph = agent_instance.build_graph(checkpointer=checkpointer, tool_node=tool_node)
-            else:
-                agent_instance = WorkerAgent(
-                    tool_node, 
-                    llm=llm,
-                    tool_manifest=tool_manifest,
-                    result_hook=result_hook
-                )
-                graph = agent_instance.build_graph(checkpointer=checkpointer)
+            # Initialize Unified Orchestrator (v3.0)
+            agent_instance = OrchestratorAgent(
+                self.factory, 
+                self.mailbox, 
+                self.generator, 
+                llm=llm,
+                context_store=self.context_store,
+                unit_compiler=unit_compiler,
+                tool_manifest=tool_manifest,
+                result_hook=result_hook
+            )
+            graph = agent_instance.build_graph(checkpointer=checkpointer, tool_node=tool_node)
             config = {"configurable": {"thread_id": agent_id}}
             current_state = await graph.aget_state(config)
             

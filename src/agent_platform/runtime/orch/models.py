@@ -23,6 +23,7 @@ class PlanningResult(BaseModel):
     strategy: ExecutionStrategy = Field(description="The chosen path: decompose, tool_use, or finish")
     sub_tasks: Optional[List[SubAgentTask]] = Field(default=None, description="Required if strategy is 'decompose'")
     tool_call: Optional[ToolCall] = Field(default=None, description="Required if strategy is 'tool_use'")
+    final_answer: Optional[str] = Field(default=None, description="Optional: The final answer if strategy is 'finish'")
 
 class WorkerResult(BaseModel):
     thought_process: str = Field(description="The worker's reasoning")

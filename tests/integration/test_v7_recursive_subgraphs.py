@@ -7,7 +7,7 @@ from agent_platform.runtime.core.agent_factory import AgentFactory
 from agent_platform.runtime.orch.state import create_initial_state, AgentRole
 from agent_platform.runtime.orch.quota import update_quota, SessionQuota
 from agent_platform.runtime.agents.generator import SystemGeneratorAgent
-from agent_platform.runtime.agents.supervisor import SupervisorAgent
+from agent_platform.runtime.agents.orchestrator import OrchestratorAgent
 from agent_platform.runtime.orch.unit_compiler import UnitCompiler
 from agent_platform.runtime.orch.result_hook import OffloadingResultHook
 from agent_platform.runtime.orch.models import PlanningResult, ExecutionStrategy, SubAgentTask
@@ -37,10 +37,13 @@ def v7_env(tmp_path):
     )
 
     generator = SystemGeneratorAgent(llm=AsyncMock(), workspace=workspace)
+    # Mock generator for executor_node
+    generator.generate_node = AsyncMock(return_value={"generated_output": "Process task."})
+    
     dispatcher = MagicMock(spec=ToolDispatcher)
     compiler = UnitCompiler(factory, mailbox, generator, dispatcher, result_hook)
     
-    supervisor = SupervisorAgent(
+    supervisor = OrchestratorAgent(
         factory, mailbox, generator, 
         llm=mock_llm, 
         unit_compiler=compiler
@@ -54,7 +57,7 @@ def v7_env(tmp_path):
 @pytest.mark.asyncio
 async def test_v7_recursive_subgraph_invocation(v7_env):
     """
-    Verifies that Supervisor can trigger a Worker subgraph 
+    Verifies that Orchestrator can trigger a Worker subgraph 
     and merge the result back.
     """
     env = v7_env
@@ -74,10 +77,14 @@ async def test_v7_recursive_subgraph_invocation(v7_env):
     )
     
     # 1. PLAN
-    decomp_res = await supervisor.planning_node(state)
+    decomp_res = await supervisor.planner_node(state)
     state.update(decomp_res)
 
-    # 2. SPAWN
+    # 1.5 DISPATCH
+    dispatch_res = await supervisor.dispatcher_node(state)
+    state.update(dispatch_res)
+
+    # 2. EXECUTOR
     mock_worker_graph = MagicMock()
     mock_worker_graph.ainvoke = AsyncMock()
     mock_worker_graph.ainvoke.return_value = {
@@ -89,10 +96,8 @@ async def test_v7_recursive_subgraph_invocation(v7_env):
     
     env["compiler"].compile_unit = MagicMock(return_value=mock_worker_graph)
     
-    spawn_res = await supervisor.spawning_node(state)
+    spawn_res = await supervisor.executor_node(state)
     
-    # 3. VERIFY MERGE
-    assert "Sub-agent super/worker_1 returned" in spawn_res["messages"][0]["content"]
-    assert "Success from worker_1" in spawn_res["messages"][0]["content"]
-    assert len(spawn_res["next_steps"]) == 0
+    # 3. VERIFY RESULT in metadata
+    assert "Success from worker_1" in str(spawn_res["metadata"]["task_result"])
     assert spawn_res["quota"].agent_count == 1

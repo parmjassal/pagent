@@ -5,9 +5,10 @@ from agent_platform.runtime.core.workspace import WorkspaceContext
 from agent_platform.runtime.core.resource_manager import SimpleCopyResourceManager, SessionInitializer
 from agent_platform.runtime.core.agent_factory import AgentFactory
 from agent_platform.runtime.orch.state import create_initial_state, AgentRole
-from agent_platform.runtime.agents.supervisor import SupervisorAgent
+from agent_platform.runtime.agents.orchestrator import OrchestratorAgent
 from agent_platform.runtime.orch.models import PlanningResult, ExecutionStrategy, SubAgentTask, ToolCall
 from agent_platform.runtime.core.mailbox import Mailbox, FilesystemMailboxProvider
+from agent_platform.runtime.core.todo import TODOManager, TaskType
 
 @pytest.fixture
 def plan_env(tmp_path):
@@ -24,7 +25,7 @@ def plan_env(tmp_path):
     mailbox = Mailbox(FilesystemMailboxProvider(session_path))
     
     mock_llm = AsyncMock()
-    supervisor = SupervisorAgent(factory, mailbox, MagicMock(), llm=mock_llm)
+    supervisor = OrchestratorAgent(factory, mailbox, MagicMock(), llm=mock_llm)
 
     return {
         "supervisor": supervisor, "mock_llm": mock_llm, 
@@ -50,11 +51,14 @@ async def test_supervisor_planning_decompose(plan_env):
     state = create_initial_state("s1", plan_env["user_id"], plan_env["session_id"], inbox, outbox, todo_path=todo, role=AgentRole.SUPERVISOR)
     
     # 2. Run Planning Node
-    res = await sup.planning_node(state)
+    res = await sup.planner_node(state)
     
     assert res["metadata"]["strategy"] == ExecutionStrategy.DECOMPOSE
-    assert "new_helper" in res["next_steps"]
-    assert sup._should_continue(res) == "generate_prompt"
+    
+    # Verify task was added to TODO
+    todo_mgr = TODOManager(todo.parent)
+    tasks = todo_mgr.list_tasks()
+    assert any(t.assigned_to == "new_helper" for t in tasks)
 
 @pytest.mark.asyncio
 async def test_supervisor_planning_tool_use(plan_env):
@@ -74,8 +78,11 @@ async def test_supervisor_planning_tool_use(plan_env):
     state = create_initial_state("s1", plan_env["user_id"], plan_env["session_id"], inbox, outbox, todo_path=todo, role=AgentRole.SUPERVISOR)
     
     # 2. Run Planning Node
-    res = await sup.planning_node(state)
+    res = await sup.planner_node(state)
     
     assert res["metadata"]["strategy"] == ExecutionStrategy.TOOL_USE
-    assert res["metadata"]["next_tool_call"]["name"] == "ls"
-    assert sup._should_continue(res) == "tools"
+    
+    # Verify tool task was added to TODO
+    todo_mgr = TODOManager(todo.parent)
+    tasks = todo_mgr.list_tasks()
+    assert any(t.type == TaskType.TOOL and t.payload["name"] == "ls" for t in tasks)

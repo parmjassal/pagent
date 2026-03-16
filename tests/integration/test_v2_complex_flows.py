@@ -8,12 +8,13 @@ from agent_platform.runtime.orch.quota import SessionQuota, update_quota
 from agent_platform.runtime.orch.state import create_initial_state, update_next_steps, AgentRole
 from agent_platform.runtime.agents.generator import SystemGeneratorAgent
 from agent_platform.runtime.agents.validator import SystemValidatorAgent
-from agent_platform.runtime.agents.supervisor import SupervisorAgent
+from agent_platform.runtime.agents.orchestrator import OrchestratorAgent
 from agent_platform.runtime.core.dispatcher import ToolDispatcher, ToolRegistry
 from agent_platform.runtime.core.guardrails import GuardrailManager
 from agent_platform.runtime.core.sandbox import ProcessSandboxRunner
 from agent_platform.runtime.orch.models import ValidationResult, PlanningResult, ExecutionStrategy, SubAgentTask
 from agent_platform.runtime.core.mailbox import Mailbox, FilesystemMailboxProvider
+from agent_platform.runtime.core.todo import ScopedTask, TaskType, TODOManager
 
 @pytest.fixture
 def v2_env(tmp_path):
@@ -34,22 +35,25 @@ def v2_env(tmp_path):
     
     mock_sup_llm = AsyncMock()
     mock_gen_llm = AsyncMock()
+    # Mock return value to be JSON serializable (not an AsyncMock)
+    mock_gen_llm.ainvoke.return_value.content = "SYSTEM PROMPT"
+    
     mock_val_llm = AsyncMock()
 
     generator = SystemGeneratorAgent(llm=mock_gen_llm, workspace=workspace)
     validator = SystemValidatorAgent(llm=mock_val_llm, workspace=workspace)
-    supervisor = SupervisorAgent(factory, mailbox, generator, llm=mock_sup_llm)
+    orchestrator = OrchestratorAgent(factory, mailbox, generator, llm=mock_sup_llm)
 
     return {
         "user_id": user_id, "session_id": session_id, "session_path": session_path,
-        "supervisor": supervisor, "validator": validator, "mailbox": mailbox,
+        "orchestrator": orchestrator, "validator": validator, "mailbox": mailbox,
         "mock_val_llm": mock_val_llm, "mock_sup_llm": mock_sup_llm
     }
 
 @pytest.mark.asyncio
 async def test_v2_recursive_depth_and_handover(v2_env):
     env = v2_env
-    supervisor = env["supervisor"]
+    orchestrator = env["orchestrator"]
     
     env["mock_sup_llm"].ainvoke.return_value = PlanningResult(
         thought_process="Spawning L1",
@@ -62,11 +66,13 @@ async def test_v2_recursive_depth_and_handover(v2_env):
     inbox, outbox, todo = agent_dir/"inbox", agent_dir/"outbox", agent_dir/"todo"
     state = create_initial_state("super", env["user_id"], env["session_id"], inbox, outbox, todo_path=todo, role=AgentRole.SUPERVISOR)
     
-    # 1. Spawn L1
-    res1 = await supervisor.planning_node(state)
+    # 1. Plan and Dispatch L1
+    res1 = await orchestrator.planner_node(state)
     state.update(res1)
-    res_spawn1 = await supervisor.spawning_node(state)
-    state["quota"] = update_quota(state["quota"], res_spawn1["quota"])
+    res_disp1 = await orchestrator.dispatcher_node(state)
+    state.update(res_disp1)
+    res_exec1 = await orchestrator.executor_node(state)
+    state["quota"] = update_quota(state["quota"], res_exec1["quota"])
     
     # 2. Spawn L2 from L1
     env["mock_sup_llm"].ainvoke.return_value = PlanningResult(
@@ -74,22 +80,24 @@ async def test_v2_recursive_depth_and_handover(v2_env):
         strategy=ExecutionStrategy.DECOMPOSE,
         sub_tasks=[SubAgentTask(agent_id="agent_l2", role=AgentRole.WORKER, instructions="Task")]
     )
-    state["agent_id"] = "super/agent_l1" # Correct hierarchical ID for current agent
+    state["agent_id"] = "super/agent_l1" 
     state["current_depth"] = 1
-    state["next_steps"] = [] # Clear for re-planning
-    # Use L1's todo path for re-planning
+    state["messages"] = [] 
+    # Use L1's todo path
     l1_todo = env["session_path"] / "agents" / "super/agent_l1" / "todo"
     state["todo_path"] = l1_todo
 
-    res2 = await supervisor.planning_node(state)
+    res2 = await orchestrator.planner_node(state)
     state.update(res2)
-    res_spawn2 = await supervisor.spawning_node(state)
-    state["quota"] = update_quota(state["quota"], res_spawn2["quota"])
+    res_disp2 = await orchestrator.dispatcher_node(state)
+    state.update(res_disp2)
+    res_exec2 = await orchestrator.executor_node(state)
+    state["quota"] = update_quota(state["quota"], res_exec2["quota"])
     
     assert state["quota"].agent_count == 2
     # The spawned ID is parent/child -> super/agent_l1/agent_l2
     msg = env["mailbox"].receive("super/agent_l1/agent_l2")
-    assert msg, f"Message for super/agent_l1/agent_l2 not found in mailbox at {env['session_path']}/agents/super/agent_l1/agent_l2/inbox"
+    assert msg, f"Message for super/agent_l1/agent_l2 not found"
     assert msg["sender"] == "super/agent_l1"
 
 @pytest.mark.asyncio
@@ -111,7 +119,7 @@ async def test_v2_validation_positive_negative(v2_env):
 @pytest.mark.asyncio
 async def test_v2_session_quota_enforcement(v2_env):
     env = v2_env
-    supervisor = env["supervisor"]
+    orchestrator = env["orchestrator"]
     
     # Correct paths
     agent_dir = env["session_path"] / "agents" / "super"
@@ -120,16 +128,24 @@ async def test_v2_session_quota_enforcement(v2_env):
     state["quota"].max_agents = 2
     
     # 1
-    state["next_steps"] = ["s1"]
-    res1 = await supervisor.spawning_node(state)
+    todo_mgr = TODOManager(todo.parent)
+    todo_mgr.add_task(ScopedTask(title="s1", description="d", type=TaskType.AGENT, assigned_to="s1"))
+    res_disp1 = await orchestrator.dispatcher_node(state)
+    state.update(res_disp1)
+    res1 = await orchestrator.executor_node(state)
     state["quota"] = update_quota(state["quota"], res1["quota"])
     
     # 2
-    state["next_steps"] = ["s2"]
-    res2 = await supervisor.spawning_node(state)
+    todo_mgr.add_task(ScopedTask(title="s2", description="d", type=TaskType.AGENT, assigned_to="s2"))
+    res_disp2 = await orchestrator.dispatcher_node(state)
+    state.update(res_disp2)
+    res2 = await orchestrator.executor_node(state)
     state["quota"] = update_quota(state["quota"], res2["quota"])
     
     # 3 (Fail)
-    state["next_steps"] = ["s3"]
-    res3 = await supervisor.spawning_node(state)
-    assert "Failed to spawn super/s3: Quota or Depth limit reached." in res3["messages"][0]["content"]
+    todo_mgr.add_task(ScopedTask(title="s3", description="d", type=TaskType.AGENT, assigned_to="s3"))
+    res_disp3 = await orchestrator.dispatcher_node(state)
+    state.update(res_disp3)
+    res3 = await orchestrator.executor_node(state)
+    assert res3["quota"].agent_count == 0
+    assert res3.get("metadata", {}).get("task_error") == "Quota reached"

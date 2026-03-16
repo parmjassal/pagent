@@ -7,7 +7,7 @@ from agent_platform.runtime.core.agent_factory import AgentFactory
 from agent_platform.runtime.orch.state import create_initial_state, AgentRole
 from agent_platform.runtime.agents.generator import SystemGeneratorAgent, TaskType
 from agent_platform.runtime.agents.validator import SystemValidatorAgent
-from agent_platform.runtime.agents.supervisor import SupervisorAgent
+from agent_platform.runtime.agents.orchestrator import OrchestratorAgent
 from agent_platform.runtime.core.dispatcher import ToolDispatcher, ToolRegistry
 from agent_platform.runtime.core.schema import ToolSource
 from agent_platform.runtime.core.guardrails import GuardrailManager, PolicyGenerator
@@ -59,7 +59,7 @@ def v1_env(tmp_path):
 
     generator = SystemGeneratorAgent(llm=mock_gen_llm, workspace=workspace)
     validator = SystemValidatorAgent(llm=mock_val_llm, workspace=workspace)
-    supervisor = SupervisorAgent(factory, mailbox, generator, llm=mock_sup_llm)
+    orchestrator = OrchestratorAgent(factory, mailbox, generator, llm=mock_sup_llm)
     
     sandbox = ProcessSandboxRunner()
     guardrails = GuardrailManager(policy_generator=mock_policy_gen)
@@ -68,7 +68,7 @@ def v1_env(tmp_path):
 
     return {
         "env": (user_id, session_id, session_path),
-        "supervisor": supervisor,
+        "orchestrator": orchestrator,
         "dispatcher": dispatcher,
         "generator": generator,
         "validator": validator,
@@ -78,7 +78,7 @@ def v1_env(tmp_path):
 @pytest.mark.asyncio
 async def test_v1_full_platform_lifecycle_with_mocks(v1_env):
     user_id, session_id, session_path = v1_env["env"]
-    supervisor = v1_env["supervisor"]
+    orchestrator = v1_env["orchestrator"]
     dispatcher = v1_env["dispatcher"]
     validator = v1_env["validator"]
 
@@ -94,9 +94,12 @@ async def test_v1_full_platform_lifecycle_with_mocks(v1_env):
         todo_path=todo,
         role=AgentRole.SUPERVISOR
     )
-    graph = supervisor.build_graph()
+    graph = orchestrator.build_graph()
     final_state = await graph.ainvoke(state)
     assert final_state["quota"].agent_count == 1
+
+    # Inject mock generated output for validator to check
+    final_state["generated_output"] = "MOCK CODE CONTENT"
 
     v1_env["mock_val_llm"].ainvoke.return_value = ValidationResult(is_valid=False, reasoning="Violation: destructive")
     val_res = await validator.validate_node(final_state)

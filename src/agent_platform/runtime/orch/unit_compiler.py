@@ -2,14 +2,13 @@ from typing import Any, Dict, Optional, Callable
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from .state import AgentState, AgentRole
-from ..agents.supervisor import SupervisorAgent
-from ..agents.worker import WorkerAgent
+from ..agents.orchestrator import OrchestratorAgent
 from ..orch.tool_node import AgentToolNode
 from .result_hook import ResultHook
 
 class UnitCompiler:
     """
-    Dynamically compiles LangGraph 'Units' (Worker or Supervisor) 
+    Dynamically compiles LangGraph 'Units' (Orchestrator) 
     based on the assigned AgentRole.
     """
 
@@ -30,7 +29,7 @@ class UnitCompiler:
         self.model_config = model_config or {"model_name": "gpt-4o"}
 
     def compile_unit(self, role: AgentRole, checkpointer: Optional[BaseCheckpointSaver] = None) -> Any:
-        """Builds and compiles the graph for the specific role."""
+        """Builds and compiles the graph for the specific role using OrchestratorAgent."""
         
         # Initialize LLM for the unit
         from langchain_openai import ChatOpenAI
@@ -44,26 +43,16 @@ class UnitCompiler:
             temperature=0
         )
 
-        if role == AgentRole.SUPERVISOR:
-            agent = SupervisorAgent(
-                self.factory, self.mailbox, self.generator,
-                llm=llm,
-                unit_compiler=self, # Self-reference for recursion
-                result_hook=self.result_hook
-            )
-            tool_node = AgentToolNode(self.dispatcher)
-            return agent.build_graph(checkpointer=checkpointer, tool_node=tool_node)
-        
-        elif role == AgentRole.WORKER:
-            tool_node = AgentToolNode(self.dispatcher)
-            agent = WorkerAgent(
-                tool_node,
-                llm=llm,
-                result_hook=self.result_hook
-            )
-            return agent.build_graph(checkpointer=checkpointer)
-        
-        else:
-            raise ValueError(f"Unknown AgentRole: {role}")
+        # In Unified Model v3.0, both Supervisor and Worker use OrchestratorAgent.
+        # The prompt template (loaded in planner_node) determines the behavior.
+        agent = OrchestratorAgent(
+            self.factory, self.mailbox, self.generator,
+            llm=llm,
+            unit_compiler=self, # Self-reference for recursion
+            result_hook=self.result_hook,
+            tool_manifest=self.dispatcher.registry.get_tool_manifest()
+        )
+        tool_node = AgentToolNode(self.dispatcher)
+        return agent.build_graph(checkpointer=checkpointer, tool_node=tool_node)
 
 import asyncio
