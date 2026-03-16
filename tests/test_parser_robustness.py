@@ -33,6 +33,12 @@ def test_parse_chatty_fallback():
     assert res["thought_process"] == "exploring"
     assert res["strategy"] == "finish"
 
+def test_parse_python_dict_style():
+    text = "{'thought_process': 'thinking', 'strategy': 'finish', 'flag': True}"
+    res = robust_json_parser(text)
+    assert res["strategy"] == "finish"
+    assert res["flag"] is True
+
 def test_parse_invalid_raises():
     text = 'Just some text with no fields.'
     with pytest.raises(Exception):

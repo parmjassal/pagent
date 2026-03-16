@@ -32,7 +32,11 @@ class ToolRegistry:
     def _load_defaults(self):
         for tool in STATIC_TOOL_REGISTRY:
             if tool["name"] not in self.metadata:
-                self.metadata[tool["name"]] = {"source": tool["source"], "summary": tool["summary"]}
+                self.metadata[tool["name"]] = {
+                    "source": tool["source"], 
+                    "summary": tool["summary"],
+                    "parameters": tool.get("parameters", [])
+                }
 
     def _load(self) -> Dict[str, Dict[str, Any]]:
         if self.registry_file.exists():
@@ -63,7 +67,9 @@ class ToolRegistry:
         nl = chr(10)
         manifest = f"## Available Tools{nl}{nl}"
         for name, meta in self.metadata.items():
-            manifest += f"- **{name}**: {meta.get('summary', 'No description.')}{nl}"
+            params_list = meta.get("parameters", [])
+            params_str = f" ({', '.join(params_list)})" if params_list else ""
+            manifest += f"- **{name}{params_str}**: {meta.get('summary', 'No description.')}{nl}"
         return manifest
 
 class ToolDispatcher:

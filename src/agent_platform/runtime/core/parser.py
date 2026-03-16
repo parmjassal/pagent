@@ -28,10 +28,16 @@ def robust_json_parser(text: str) -> Dict[str, Any]:
         end_idx = text.rfind('}')
         if start_idx != -1 and end_idx != -1:
             json_str = text[start_idx:end_idx+1]
+            
+            # Simple heuristic to handle single quotes if double quotes are missing
+            if "'" in json_str and '"' not in json_str:
+                # Replace single quotes with double quotes (dangerous but useful for some LLMs)
+                json_str = json_str.replace("'", '"')
+                # Handle Python booleans/None
+                json_str = json_str.replace("True", "true").replace("False", "false").replace("None", "null")
+
             # Try to fix common issues like trailing commas before closing braces
-            # Simple regex to fix common "trailing comma in object"
             json_str = re.sub(r',\s*\}', '}', json_str)
-            # Simple regex to fix common "trailing comma in array"
             json_str = re.sub(r',\s*\]', ']', json_str)
             return json.loads(json_str)
     except json.JSONDecodeError:
