@@ -1,11 +1,20 @@
+## Unified Orchestrator Model (v3.0) - Batch-Sequential Execution
+- [ ] **Schema Convergence:** Update `ScopedTask` in `todo.py` to support `TaskType` (TOOL vs. AGENT) and `result` persistence.
+- [ ] **Orchestrator Implementation:** Create `src/agent_platform/runtime/agents/orchestrator.py` with the new Planner -> Dispatcher -> Executor -> Collector flow.
+- [ ] **Unit Type Merging:** Refactor `UnitCompiler` to always return an `OrchestratorUnit`, using `AgentRole` as a prompt hint.
+- [ ] **Batch Dispatch Logic:** Implement the "Inner Loop" in the graph to process all `PENDING` tasks in a batch before returning to the Planner.
+- [ ] **Persistence & Visibility:** Ensure task results are correctly summarized in the Planner's message history and offloaded when necessary.
+- [ ] **Legacy Deprecation:** Safely remove `supervisor.py` and `worker.py` after ensuring feature parity.
+- [ ] **Integration Test Migration:** Refactor all 23 integration tests to work with the unified `Orchestrator` model, ensuring Role-specific behavior is maintained via prompts.
+
 ## Refined Context & Knowledge Orchestration (v2.1)
-- [ ] **Unified Context Interface:** Refactor `ContextTools` to handle hierarchical `update_context` and global `update_knowledge`.
-- [ ] **Reasoning-driven Global Knowledge:** Implement `update_knowledge` with `[8-char-hex-prefix]_[contextual_name].json` naming logic.
-- [ ] **Scratchpad Offloading Refactor:** Update `OffloadingResultHook` to use a distinct `offload_` prefix and write to the global `knowledge/` folder.
-- [ ] **Filesystem Restriction:** Prevent `FilesystemTools.write_file` from writing directly to the `knowledge/` directory to enforce reasoning-driven knowledge promotion.
-- [ ] **Initialization Alignment:** Correctly initialize `ContextTools` with both `ContextStore` and `knowledge_path` in `bootstrap.py`.
-- [ ] **Prompt Updates:** Update Supervisor and Worker prompts to distinguish between Downward (Branch) and Global (Reasoned) visibility.
-- [ ] **Verification:** Add unit tests for prefix logic and integration tests for filesystem write restrictions.
+- [x] **Unified Context Interface:** Refactor `ContextTools` to handle hierarchical `update_context` and global `update_knowledge`.
+- [x] **Reasoning-driven Global Knowledge:** Implement `update_knowledge` with `[8-char-hex-prefix]_[contextual_name].json` naming logic.
+- [x] **Scratchpad Offloading Refactor:** Update `OffloadingResultHook` to use a distinct `offload_` prefix and write to the global `knowledge/` folder.
+- [x] **Filesystem Restriction:** Prevent `FilesystemTools.write_file` from writing directly to the `knowledge/` directory to enforce reasoning-driven knowledge promotion.
+- [x] **Initialization Alignment:** Correctly initialize `ContextTools` with both `ContextStore` and `knowledge_path` in `bootstrap.py`.
+- [x] **Prompt Updates:** Update Supervisor and Worker prompts to distinguish between Downward (Branch) and Global (Reasoned) visibility.
+- [x] **Verification:** Add unit tests for prefix logic and integration tests for filesystem write restrictions.
 
 # Original Tasks (Archive/Complete)
 
