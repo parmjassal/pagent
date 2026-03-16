@@ -150,6 +150,9 @@ async def test_v10_triplet_extraction_workflow(v10_env):
 
     compiler = V10UnitCompiler(env["factory"], env["mailbox"], mock_generator, env["dispatcher"], env["result_hook"])
     
+    # Mock dispatcher to track calls
+    env["dispatcher"].dispatch = AsyncMock(side_effect=env["dispatcher"].dispatch)
+
     agent_dir = env["workspace"].get_agent_dir(env["user_id"], env["session_id"], "super")
     initial_state = create_initial_state(
         "super", env["user_id"], env["session_id"],
@@ -164,7 +167,15 @@ async def test_v10_triplet_extraction_workflow(v10_env):
 
     # --- VERIFICATION ---
     
-    # 1. Verify triplets were extracted and stored in hierarchical context
+    # 0. Verify tool names were invoked exactly as registered (preventing hallucinations)
+    sup_calls = [c for c in mock_sup_llm.ainvoke.call_args_list]
+    # In V10, supervisor calls 'build_index' and 'update_context'
+    # We can check the mock dispatcher calls instead for end-to-end verification
+    dispatch_calls = [c[0][1] for c in env["dispatcher"].dispatch.call_args_list]
+    assert "build_index" in dispatch_calls
+    assert "update_context" in dispatch_calls
+    assert "semantic_search" in dispatch_calls
+    assert "list_directory" not in dispatch_calls # Explicitly ensure NO hallucination
     fact_path = env["session_path"] / "agents" / "super" / "global_context" / "arch_triplets.md"
     assert fact_path.exists()
     content = fact_path.read_text()
@@ -172,7 +183,8 @@ async def test_v10_triplet_extraction_workflow(v10_env):
     assert "(OrderProcessor, concurrency, 5)" in content
 
     # 2. Verify worker result was bubbled up
-    assert any("super/analyst_01 returned" in m["content"] for m in final_state["messages"] if m["role"] == "system")
+    # Changed from 'system' to 'user' for API compatibility
+    assert any("[System] Sub-agent super/analyst_01 returned" in m["content"] for m in final_state["messages"] if m["role"] == "user")
     
     # 3. Verify semantic index exists
     assert (env["session_path"] / "semantic_index").exists()

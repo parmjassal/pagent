@@ -100,6 +100,13 @@ async def test_guardrail_hierarchy_context_visibility(guardrail_env):
     # 3. Trigger validation for WORKER
     await env["manager"].validate_tool_call(state, "read_file", {"path": "/data/config.yaml"})
     
+    # 4. Verify worker's guardrail saw the parent's fact
+    _, kwargs = env["mock_policy_gen"].generate.call_args
+    visible_context = kwargs.get("visible_context")
+    
+    assert "parent_rule" in visible_context
+    assert "Implicit access to /data" in visible_context
+
 from agent_platform.runtime.agents.supervisor import SupervisorAgent
 from agent_platform.runtime.core.mailbox import Mailbox
 from agent_platform.runtime.agents.generator import SystemGeneratorAgent
@@ -193,9 +200,8 @@ async def test_generator_receives_global_context(guardrail_env):
     await generator.generate_node(state)
     
     # 5. Verify the fact was included in the LLM input
-    _, kwargs = mock_llm.ainvoke.call_args
-    messages = args[0] if 'args' in locals() else mock_llm.ainvoke.call_args[0][0]
-    human_msg = messages[1].content
+    args, _ = mock_llm.ainvoke.call_args
+    human_msg = args[0][1].content
     
     assert "target_architecture" in human_msg
     assert "microservices pattern" in human_msg
@@ -248,3 +254,43 @@ async def test_worker_injects_tool_manifest(guardrail_env):
     system_msg = call_args[0].content
     assert "## Available Tools" in system_msg
     assert "ls" in system_msg
+
+@pytest.mark.asyncio
+async def test_agent_invokes_correct_tool_name(guardrail_env):
+    """
+    Verifies that the AgentToolNode correctly receives the tool name 
+    from the LLM metadata and dispatches it. 
+    Crucially, it verifies that the name matches the expected registry key.
+    """
+    env = guardrail_env
+    from agent_platform.runtime.core.dispatcher import ToolDispatcher, ToolRegistry
+    from agent_platform.runtime.orch.tool_node import AgentToolNode
+    
+    # 1. Setup real registry and dispatcher with mock sandbox/guardrails
+    registry = ToolRegistry(env["session_path"])
+    # Register 'ls' as a native tool
+    registry.register_native("ls", lambda path, state=None: ["file1.txt"], summary="List files")
+    
+    mock_dispatcher = MagicMock(spec=ToolDispatcher)
+    mock_dispatcher.dispatch = AsyncMock(return_value={"success": True, "output": "file1.txt", "source": "native"})
+    
+    tool_node = AgentToolNode(mock_dispatcher)
+    
+    # 2. Simulate state where LLM requested 'ls' (NOT 'list_directory')
+    state = create_initial_state("wrk", "u", "s", Path("/tmp"), Path("/tmp"), role=AgentRole.WORKER)
+    state["metadata"]["next_tool_call"] = {
+        "name": "ls", 
+        "args": {"path": "."},
+        "id": "call_123"
+    }
+    
+    # 3. Call ToolNode
+    await tool_node(state)
+    
+    # 4. Verify dispatcher was called with 'ls'
+    # This ensures that our logic preserves the correct tool name
+    args, _ = mock_dispatcher.dispatch.call_args
+    invoked_tool_name = args[1]
+    
+    assert invoked_tool_name == "ls"
+    assert invoked_tool_name != "list_directory"
