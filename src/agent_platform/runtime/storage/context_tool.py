@@ -66,6 +66,34 @@ class ContextTools:
         except Exception as e:
             return f"Failed to update global knowledge: {str(e)}"
 
+    def list_knowledge(self, state: AgentState) -> List[str]:
+        """
+        Lists all Global Knowledge files available in the session knowledge directory.
+        Returns the file names so agents can decide which knowledge artifact to fetch.
+        """
+        if not self.knowledge_path or not self.knowledge_path.exists():
+            return []
+
+        return [p.name for p in self.knowledge_path.glob("*.json")]
+
+
+    def fetch_knowledge(self, state: AgentState, name: str) -> Optional[str]:
+        """
+        Fetches the contents of a specific Global Knowledge file.
+        The name should match a file returned by list_knowledge.
+        """
+        if not self.knowledge_path:
+            return None
+
+        target_path = self.knowledge_path / name
+        if not target_path.exists():
+            return None
+
+        try:
+            return target_path.read_text()
+        except Exception:
+            return None
+
     def search_context(self, state: AgentState, query: str) -> str:
         """
         Performs a semantic-ish search across visible global_context files.
