@@ -29,10 +29,10 @@
 ## Milestone: Recursive Hierarchical Units (Unified Graph)
 - [x] **Agent-Level Workspace Refactor:** Move `todo/`, `inbox/`, and `global_context/` under `agents/{agent_id}/`.
 - [x] **ContextStore Abstraction:** Interface for hierarchical, read-only visibility of `global_context`.
-- [ ] **ResultHook Abstraction:** Interface for payload size checking and automatic file offloading (Summary + File Ref).
-- [ ] **Dynamic Unit Compiler:** Logic to compile a `SupervisorUnit` or `WorkerUnit` graph based on role metadata.
-- [ ] **Wait & Merge Spawn Node:** Implementation of recursive subgraph call sharing `thread_id` with Result-only merging.
-- [ ] **Supervisor Planning Node:** Decision logic for "Decompose vs. Self-Execute."
+- [x] **ResultHook Abstraction:** Interface for payload size checking and automatic file offloading (Summary + File Ref).
+- [x] **Dynamic Unit Compiler:** Logic to compile a `SupervisorUnit` or `WorkerUnit` graph based on role metadata.
+- [x] **Wait & Merge Spawn Node:** Implementation of recursive subgraph call sharing `thread_id` with Result-only merging.
+- [x] **Supervisor Planning Node:** Decision logic for "Decompose vs. Self-Execute."
 - [x] **ScopedFileSystem Tool:** Hierarchical read-only access tool.
 - [x] **ContextUpdate Tool:** Restricted promotion of facts to `global_context`.
 
