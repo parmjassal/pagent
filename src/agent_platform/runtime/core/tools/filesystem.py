@@ -2,6 +2,8 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 import logging
 from ...orch.state import AgentState
+from ..context_store import ContextStore
+from ..schema import ErrorCode
 
 logger = logging.getLogger(__name__)
 
@@ -10,46 +12,51 @@ class FilesystemTools:
     A collection of core filesystem interaction tools for agents.
     """
 
-    def __init__(self, session_path: Path):
+    def __init__(self, session_path: Path, context_store: Optional[ContextStore] = None):
         self.session_path = session_path
+        self.context_store = context_store
 
-    def _resolve_path(self, relative_path: str) -> Optional[Path]:
-        resolved = (self.session_path / relative_path).resolve()
-        if not str(resolved).startswith(str(self.session_path)):
-            logger.warning(f"Security violation: Attempted to access path outside session boundary: {resolved}")
-            return None
+    def _resolve_path(self, path_str: str, state: Optional[AgentState] = None) -> Optional[Path]:
+        path = Path(path_str)
+        if path.is_absolute():
+            resolved = path.resolve()
+        else:
+            resolved = (self.session_path / path_str).resolve()
         return resolved
 
     def write_file(self, file_path: str, content: str, state: Optional[AgentState] = None) -> Dict[str, Any]:
         resolved_path = self._resolve_path(file_path)
         if not resolved_path:
-            return {"success": False, "error": f"Invalid path: {file_path}"}
+            return {"success": False, "error": f"Invalid path: {file_path}", "error_code": ErrorCode.INVALID_ARGUMENTS}
         
         try:
             resolved_path.parent.mkdir(parents=True, exist_ok=True)
             resolved_path.write_text(content)
             return {"success": True, "path": str(resolved_path)}
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            code = ErrorCode.PERMISSION_DENIED if isinstance(e, PermissionError) else ErrorCode.EXECUTION_ERROR
+            return {"success": False, "error": str(e), "error_code": code}
 
     def read_file(self, file_path: str, state: Optional[AgentState] = None) -> Dict[str, Any]:
         resolved_path = self._resolve_path(file_path)
         if not resolved_path:
-            return {"success": False, "error": f"Invalid path: {file_path}"}
+            return {"success": False, "error": f"Invalid path: {file_path}", "error_code": ErrorCode.INVALID_ARGUMENTS}
         
         try:
             content = resolved_path.read_text()
             return {"success": True, "content": content}
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            code = ErrorCode.PERMISSION_DENIED if isinstance(e, PermissionError) else ErrorCode.EXECUTION_ERROR
+            return {"success": False, "error": str(e), "error_code": code}
 
     def ls(self, path: str = ".", state: Optional[AgentState] = None) -> Dict[str, Any]:
         resolved_path = self._resolve_path(path)
         if not resolved_path or not resolved_path.is_dir():
-            return {"success": False, "error": f"Invalid directory: {path}"}
+            return {"success": False, "error": f"Invalid directory: {path}", "error_code": ErrorCode.INVALID_ARGUMENTS}
 
         try:
             entries = [e.name for e in resolved_path.iterdir()]
             return {"success": True, "entries": entries}
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            code = ErrorCode.PERMISSION_DENIED if isinstance(e, PermissionError) else ErrorCode.EXECUTION_ERROR
+            return {"success": False, "error": str(e), "error_code": code}

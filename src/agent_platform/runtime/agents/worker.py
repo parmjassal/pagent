@@ -9,6 +9,7 @@ from ..orch.tool_node import AgentToolNode
 from ..orch.models import WorkerResult, ExecutionStrategy
 from ..orch.logic import LoopMonitor
 from ..core.http_client import get_platform_http_client
+from ..core.parser import robust_json_parser
 
 logger = logging.getLogger(__name__)
 
@@ -75,13 +76,14 @@ class WorkerAgent:
             *state["messages"]
         ]
         
+        logger.debug(f"Prompt is {prompt}")
         response = await self.llm.ainvoke(prompt)
         
         # Robust Parsing
         if hasattr(response, "content"):
             # If it's an AIMessage, parse the content string
             try:
-                parsed = self.parser.parse(response.content)
+                parsed = robust_json_parser(response.content)
                 result = WorkerResult.model_validate(parsed)
             except Exception as e:
                 logger.error(f"Worker failed to parse JSON: {response.content}")

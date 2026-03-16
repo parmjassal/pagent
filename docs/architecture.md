@@ -13,6 +13,7 @@ The platform is built on the following architectural pillars:
 5.  **State Persistence & Resumability [Y]:** The ability to recover graph state from disk after process failure via SQLiteSaver.
 6.  **Recursive Hierarchical Units [Y]:** Unified graph execution with single `thread_id` and "Result-only" state merging.
 7.  **Lexical Scoping [Y]:** Downward visibility of `global_context` folders (children see parent facts).
+8.  **Structured Error Handling [Y]:** Standardized `ErrorCode` and `ErrorDetail` for LLM-driven error recovery.
 
 ---
 

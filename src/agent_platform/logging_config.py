@@ -49,4 +49,4 @@ def configure_logging(log_file: Optional[Path] = None):
     root_logger.setLevel(logging.INFO)
 
     # Set agents package to DEBUG by default
-    logging.getLogger("agent_platform.runtime.agents").setLevel(logging.DEBUG)
+    logging.getLogger("agent_platform.runtime").setLevel(logging.DEBUG)

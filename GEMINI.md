@@ -75,3 +75,6 @@ Every log entry **must** include:
 
 ### Stability First
 - **Fundamental Integrity:** Never perform structural changes that risk breaking functional tools (like `ls`). If an LLM call fails, investigate tool manifests and prompt engineering before assuming the platform logic is at fault.
+
+### Environment Management
+- **Virtual Environment:** Always check for and activate the `.venv` directory if it exists. If the project configuration (e.g., `pyproject.toml`, `requirements.txt`) has changed, ensure the environment is synchronized (e.g., using `uv sync` or `pip install`) before starting work.

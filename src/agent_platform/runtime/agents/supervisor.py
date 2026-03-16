@@ -13,6 +13,7 @@ from ..core.agent_factory import AgentFactory
 from ..core.mailbox import Mailbox
 from ..core.todo import TODOManager, ScopedTask
 from ..core.context_store import ContextStore
+from ..core.parser import robust_json_parser
 from .generator import SystemGeneratorAgent, TaskType
 
 logger = logging.getLogger(__name__)
@@ -85,14 +86,15 @@ class SupervisorAgent:
         ]
         
         try:
+            logger.debug(f"Prompt is {prompt}")
             response = await self.llm.ainvoke(prompt)
-            
+            logger.debug(f"Response from llm is {response}")
             # Robust Parsing
             if hasattr(response, "strategy"):
                 result = response
             elif hasattr(response, "content"):
                 # Handle AIMessage
-                parsed = self.parser.parse(response.content)
+                parsed = robust_json_parser(response.content)
                 result = PlanningResult.model_validate(parsed)
             else:
                 # Fallback for dicts

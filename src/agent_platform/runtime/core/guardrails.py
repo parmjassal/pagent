@@ -73,7 +73,7 @@ class LLMPolicyGenerator(PolicyGenerator):
 
         try:
             response = await self.llm.ainvoke([system_msg, human_msg])
-            
+            logger.debug(f"Guardrail response {response}")
             # Robust Parsing
             content = response.content if hasattr(response, "content") else str(response)
             parsed = self.parser.parse(content)

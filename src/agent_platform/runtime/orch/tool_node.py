@@ -19,6 +19,7 @@ class AgentToolNode:
         """
         Executes the tool specified in metadata or messages and updates state.
         """
+        logger.debug(f"Got the tool call {state}")
         # 1. Resolve tool request from metadata
         tool_call = state.get("metadata", {}).get("next_tool_call")
         if not tool_call:
@@ -42,8 +43,9 @@ class AgentToolNode:
             content = str(result["output"])
             log_msg = f"[System] Tool '{tool_name}' executed successfully via {result.get('source')}."
         else:
-            content = f"Error executing tool '{tool_name}': {result.get('error')}"
-            log_msg = f"[System] Tool '{tool_name}' failed."
+            code_suffix = f" (Code: {result.get('error_code')})" if result.get("error_code") else ""
+            content = f"Error executing tool '{tool_name}': {result.get('error')}{code_suffix}"
+            log_msg = f"[System] Tool '{tool_name}' failed{code_suffix}."
 
         # 4. Return State Update with Schema Compliance
         # If we have a real tool_call_id, use the 'tool' role.

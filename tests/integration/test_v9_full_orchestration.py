@@ -168,7 +168,7 @@ async def test_v9_full_architectural_audit_flow(v9_env):
     assert "uses 'standard' logger" in fact_path.read_text()
 
     # C. Check if worker result bubbled up
-    # The last system message should contain the result from Turn 3 merge
-    assert any("super/analyst returned" in m["content"] for m in final_state["messages"] if m["role"] == "system")
+    # Changed from 'system' to 'user' for API compatibility
+    assert any("super/analyst returned" in m["content"] for m in final_state["messages"] if m["role"] == "user")
     assert final_state["metadata"]["strategy"] == ExecutionStrategy.FINISH
     assert final_state["quota"].agent_count == 1 # Supervisor + Analyst (initially 0, spawns 1)

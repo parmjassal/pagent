@@ -1,9 +1,31 @@
+import re
 import hashlib
 import logging
 from typing import Dict, Any, Tuple
 from .state import AgentState
 
 logger = logging.getLogger(__name__)
+
+class ResponseParser:
+    """
+    Utility to clean and parse LLM responses, handling thinking tags 
+    and non-JSON preambles.
+    """
+    @staticmethod
+    def clean_json_response(content: str) -> str:
+        """Strips <think> tags and returns the underlying JSON string."""
+        # 1. Remove <think>...</think> blocks
+        content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL)
+
+        # 2. Find the first '{' and last '}' to isolate JSON block
+        # This handles cases where LLM includes preamble before or after JSON
+        start = content.find('{')
+        end = content.rfind('}')
+
+        if start != -1 and end != -1:
+            return content[start:end+1]
+
+        return content.strip()
 
 class LoopMonitor:
     """
@@ -12,7 +34,6 @@ class LoopMonitor:
     1. Node execution thresholds.
     2. Repeated identical messages (Semantic loops).
     """
-
     @staticmethod
     def check_node_loop(state: AgentState, node_name: str, threshold: int = 3) -> bool:
         """Returns True if a specific node has been visited more than 'threshold' times."""

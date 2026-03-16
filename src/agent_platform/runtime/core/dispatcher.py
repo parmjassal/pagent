@@ -7,7 +7,7 @@ from .sandbox import SandboxRunner, SandboxResult
 from .guardrails import GuardrailManager
 from ..orch.state import AgentState
 from .tool_registry_defaults import STATIC_TOOL_REGISTRY
-from .schema import ToolSource
+from .schema import ToolSource, ErrorCode, ErrorDetail
 
 logger = logging.getLogger(__name__)
 
@@ -86,10 +86,14 @@ class ToolDispatcher:
     async def dispatch(self, state: AgentState, tool_name: str, **kwargs) -> Dict[str, Any]:
         is_allowed, reason = await self.guardrails.validate_tool_call(state, tool_name, kwargs)
         if not is_allowed:
-            return {"error": f"Guardrail blocked: {reason}", "success": False}
+            return ErrorDetail(
+                code=ErrorCode.GUARDRAIL_BLOCK,
+                message=f"Guardrail blocked: {reason}",
+                details={"reason": reason}
+            ).to_dict()
 
         source = self.registry.get_source(tool_name)
-
+        logger.debug(f"Tool Invocation is {source}")
         if source == ToolSource.COMMUNITY or source == ToolSource.CORE:
             return await self._execute_native(tool_name, state, **kwargs)
         else:
@@ -97,8 +101,12 @@ class ToolDispatcher:
 
     async def _execute_native(self, tool_name: str, state: AgentState, **kwargs) -> Dict[str, Any]:
         func = self.registry.native_funcs.get(tool_name)
+        logger.info(f"Native Tool Call")
         if not func:
-            return {"error": f"Native tool {tool_name} not found", "success": False}
+            return ErrorDetail(
+                code=ErrorCode.TOOL_NOT_FOUND,
+                message=f"Native tool {tool_name} not found"
+            ).to_dict()
         try:
             # Handle both async and sync native tools
             import inspect
@@ -106,15 +114,29 @@ class ToolDispatcher:
                 result = await func(state=state, **kwargs)
             else:
                 result = func(state=state, **kwargs)
+            
+            # If the tool itself returned a dict with success=False, try to enrich it
+            if isinstance(result, dict) and not result.get("success", True):
+                if "error_code" not in result:
+                    result["error_code"] = ErrorCode.EXECUTION_ERROR.value
+                return result
+
             return {"output": result, "success": True, "source": "native"}
         except Exception as e:
-            return {"error": str(e), "success": False}
+            return ErrorDetail(
+                code=ErrorCode.EXECUTION_ERROR,
+                message=str(e),
+                details={"exception": type(e).__name__}
+            ).to_dict()
 
     def _execute_sandboxed(self, tool_name: str, **kwargs) -> Dict[str, Any]:
         logger.info(f"Dispatching to SANDBOX: {tool_name}")
         
         if not self.dynamic_loader:
-            return {"error": "Dynamic tool loader not configured", "success": False}
+            return ErrorDetail(
+                code=ErrorCode.INTERNAL_ERROR,
+                message="Dynamic tool loader not configured"
+            ).to_dict()
 
         entry = self.registry.metadata.get(tool_name, {})
         executable = self.dynamic_loader.get_executable(tool_name, entry.get("path"))
@@ -123,4 +145,12 @@ class ToolDispatcher:
         
         if result.success:
             return {"output": result.output, "success": True, "source": "sandbox"}
-        return {"error": result.error, "success": False}
+            
+        code = ErrorCode.EXECUTION_ERROR
+        if result.error and "Timeout" in result.error:
+            code = ErrorCode.TIMEOUT
+            
+        return ErrorDetail(
+            code=code,
+            message=result.error or "Unknown sandbox error"
+        ).to_dict()
