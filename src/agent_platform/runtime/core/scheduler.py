@@ -112,7 +112,7 @@ class AutonomousScheduler:
             todo_tool = TODOTool(self.session_path)
             registry.register_native("add_task", todo_tool.add_task, source=ToolSource.CORE)
             registry.register_native("list_tasks", todo_tool.list_tasks, source=ToolSource.CORE)
-            registry.register_native("update_task_status", todo_tool.update_status, source=ToolSource.CORE)
+            registry.register_native("update_task_status", todo_tool.update_task_status, source=ToolSource.CORE)
 
             context_tools = ContextTools(self.context_store, knowledge_path=knowledge_path)
             registry.register_native("update_context", context_tools.update_context, source=ToolSource.CORE)
