@@ -32,11 +32,23 @@ class UnitCompiler:
     def compile_unit(self, role: AgentRole, checkpointer: Optional[BaseCheckpointSaver] = None) -> Any:
         """Builds and compiles the graph for the specific role."""
         
+        # Initialize LLM for the unit
+        from langchain_openai import ChatOpenAI
+        from ..core.http_client import get_platform_http_client
+        
+        http_client = get_platform_http_client()
+        llm = ChatOpenAI(
+            model=self.model_config.get("model_name", "gpt-4o"),
+            openai_api_base=self.model_config.get("openai_base_url"),
+            http_client=http_client,
+            temperature=0
+        )
+
         if role == AgentRole.SUPERVISOR:
             agent = SupervisorAgent(
                 self.factory, self.mailbox, self.generator,
-                unit_compiler=self, # Self-reference for recursion
-                **self.model_config
+                llm=llm,
+                unit_compiler=self # Self-reference for recursion
             )
             tool_node = AgentToolNode(self.dispatcher)
             return agent.build_graph(checkpointer=checkpointer, tool_node=tool_node)
@@ -45,9 +57,9 @@ class UnitCompiler:
             tool_node = AgentToolNode(self.dispatcher)
             agent = WorkerAgent(
                 tool_node,
-                **self.model_config
+                llm=llm
             )
-            return agent.build_graph()
+            return agent.build_graph(checkpointer=checkpointer)
         
         else:
             raise ValueError(f"Unknown AgentRole: {role}")

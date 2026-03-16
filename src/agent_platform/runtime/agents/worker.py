@@ -97,7 +97,7 @@ class WorkerAgent:
     def abort_node(self, state: AgentState) -> Dict[str, Any]:
         return {"messages": [{"role": "system", "content": "Worker ABORTING: Loop detected."}]}
 
-    def build_graph(self) -> Any:
+    def build_graph(self, checkpointer: Optional[Any] = None) -> Any:
         workflow = StateGraph(AgentState)
         workflow.add_node("reason", self.reasoning_node)
         workflow.add_node("tools", self.tool_node)
@@ -118,4 +118,4 @@ class WorkerAgent:
         workflow.add_edge("tools", "reason") # Loop back after tool execution
         workflow.add_edge("abort", END)
         
-        return workflow.compile()
+        return workflow.compile(checkpointer=checkpointer)
