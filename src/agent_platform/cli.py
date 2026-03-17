@@ -81,16 +81,17 @@ def build_dynamic_tree(session_id: str, user_id: str, model_name: str, task: Opt
         for todo in agent_info['todos']:
             status_style = get_status_style(todo.get('status'))
             description = todo.get('description', 'No description').replace('[', '(').replace(']', ')')
-            
-            assigned_agent = todo.get('assigned_to')
-            if assigned_agent:
+
+            assigned_agent_id = todo.get('assigned_to')
+            if assigned_agent_id:
                 # This todo represents spawning a sub-agent
-                goal_text = f"🤖 [bold yellow]Agent: {assigned_agent}[/bold yellow] - Goal: {description} {status_style}"
-                
+                simple_name = assigned_agent_id.split('/')[-1]
+                goal_text = f"🤖 [bold yellow]Agent: {simple_name}[/bold yellow] - Goal: {description} {status_style}"
+
                 # Check if the assigned agent exists yet
-                if assigned_agent in agents_data:
+                if assigned_agent_id in agents_data:
                     sub_agent_node = parent_node.add(goal_text)
-                    _build_subtree(sub_agent_node, assigned_agent)
+                    _build_subtree(sub_agent_node, assigned_agent_id)
                 else:
                     # Agent is planned but not created yet
                     parent_node.add(f"{goal_text} [dim](pending creation)[/dim]")
@@ -100,14 +101,15 @@ def build_dynamic_tree(session_id: str, user_id: str, model_name: str, task: Opt
 
     # Find the root agent(s) (those not in the child_map)
     root_agents = sorted([name for name in agents_data if name not in child_to_parent_map])
-    
+
     if not root_agents and agents_data:
          # Handle cases with loops or if all agents are children by showing all as roots
         root_agents = sorted(list(agents_data.keys()))
 
-    for root_agent_name in root_agents:
-        root_node = agents_tree.add(f"👑 [bold yellow]Root Agent: {root_agent_name}[/bold yellow]")
-        _build_subtree(root_node, root_agent_name)
+    for root_agent_id in root_agents:
+        simple_name = root_agent_id.split('/')[-1]
+        root_node = agents_tree.add(f"👑 [bold yellow]Root Agent: {simple_name}[/bold yellow]")
+        _build_subtree(root_node, root_agent_id)
     
     if not agents_data:
         agents_tree.add("[dim]No agents found.[/dim]")

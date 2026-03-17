@@ -100,15 +100,17 @@ def test_v11_build_dynamic_tree_filesystem_sync(cli_test_env):
     assert "📝 Task: Perform independent task (pending)" in output
     
     # 5. Assert tasks and delegations for 'super'
-    assert "🤖 Agent: super/worker_1 - Goal: Delegate to worker 1 (in_progress)" in output
+    # Assert for the simple name 'worker_1' instead of the full path 'super/worker_1'
+    assert "🤖 Agent: worker_1 - Goal: Delegate to worker 1 (in_progress)" in output
     assert "🤖 Agent: phantom_agent - Goal: Delegate to a phantom agent (in_progress) (pending creation)" in output
 
     # 6. Assert tasks for nested agent 'super/worker_1'
     assert "📝 Task: Execute nested task (completed)" in output
 
-    # 7. Verify visual hierarchy (crude string check)
+    # 7. Verify visual hierarchy (using careful string matching and order)
     super_root_idx = output.find("👑 Root Agent: super")
-    worker_1_delegation_idx = output.find("🤖 Agent: super/worker_1")
+    # Find the delegation by its simple name
+    worker_1_delegation_idx = output.find("🤖 Agent: worker_1")
     nested_task_idx = output.find("📝 Task: Execute nested task (completed)")
     phantom_delegation_idx = output.find("🤖 Agent: phantom_agent")
 
