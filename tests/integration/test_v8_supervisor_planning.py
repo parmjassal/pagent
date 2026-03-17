@@ -33,20 +33,20 @@ def plan_env(tmp_path):
         "session_path": session_path
     }
 
+from langchain_core.messages import AIMessage
+
 @pytest.mark.asyncio
 async def test_supervisor_planning_decompose(plan_env):
     """Verifies that supervisor chooses DECOMPOSE when LLM signals it."""
     sup = plan_env["supervisor"]
     
     # 1. Mock DECOMPOSE strategy
-    # Mock the chain: llm.with_structured_output(..).ainvoke(...)
-    structured_llm_mock = AsyncMock()
-    structured_llm_mock.ainvoke.return_value = PlanningResult(
+    result_obj = PlanningResult(
         thought_process="Complex task, need help.",
         strategy=ExecutionStrategy.DECOMPOSE,
         sub_tasks=[SubAgentTask(agent_id="new_helper", role=AgentRole.WORKER, instructions="Task")]
     )
-    plan_env["mock_llm"].with_structured_output = MagicMock(return_value=structured_llm_mock)
+    plan_env["mock_llm"].ainvoke.return_value = AIMessage(content=result_obj.model_dump_json())
 
     # Correct paths
     agent_dir = plan_env["session_path"] / "agents" / "s1"
@@ -69,14 +69,12 @@ async def test_supervisor_planning_tool_use(plan_env):
     sup = plan_env["supervisor"]
     
     # 1. Mock TOOL_USE strategy
-    # Mock the chain: llm.with_structured_output(..).ainvoke(...)
-    structured_llm_mock = AsyncMock()
-    structured_llm_mock.ainvoke.return_value = PlanningResult(
+    result_obj = PlanningResult(
         thought_process="Simple task, I'll do it myself.",
         strategy=ExecutionStrategy.TOOL_USE,
         tool_call=ToolCall(name="ls", args={"path": "."})
     )
-    plan_env["mock_llm"].with_structured_output = MagicMock(return_value=structured_llm_mock)
+    plan_env["mock_llm"].ainvoke.return_value = AIMessage(content=result_obj.model_dump_json())
 
     # Correct paths
     agent_dir = plan_env["session_path"] / "agents" / "s1"

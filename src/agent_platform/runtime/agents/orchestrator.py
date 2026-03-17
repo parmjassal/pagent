@@ -3,7 +3,7 @@ import json
 import secrets
 from typing import Dict, Any, List, Optional, Union
 from langchain_core.messages import SystemMessage, HumanMessage, BaseMessage, AIMessage
-from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.output_parsers import PydanticOutputParser
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
@@ -49,6 +49,9 @@ class OrchestratorAgent:
         """Thinker: Reviews history and writes a batch of tasks to the TODO list."""
         logger.info(f"Agent {state['agent_id']} entering planner_node.")
         
+        # Setup parser and inject format instructions into the prompt
+        parser = PydanticOutputParser(pydantic_object=PlanningResult)
+        
         # Resolve Template
         session_path = self.agent_factory.workspace.get_session_dir(state["user_id"], state["session_id"])
         
@@ -59,6 +62,9 @@ class OrchestratorAgent:
         system_instruction = "Plan the next batch of tasks to achieve the goal."
         if template_path.exists():
             system_instruction = template_path.read_text()
+
+        # Inject formatting instructions
+        system_instruction += "\n\n" + parser.get_format_instructions()
 
         # Inject Tool Manifest
         if self.tool_manifest:
@@ -76,12 +82,17 @@ class OrchestratorAgent:
             *state["messages"]
         ]
         
-        # Use with_structured_output for robust, model-native JSON parsing
-        structured_llm = self.llm.with_structured_output(PlanningResult)
-        
         try:
-            result = await structured_llm.ainvoke(prompt)
-            logger.debug(f"Planning Result is {result}")
+            response = await self.llm.ainvoke(prompt)
+            logger.debug(f"Planning Result is {response}")
+            # Robust Parsing
+            if hasattr(response, "content"):
+                # The robust_json_parser can handle markdown fences
+                parsed = robust_json_parser(response.content) or ""
+                result = PlanningResult.model_validate(parsed)
+            else:
+                # This path is for when the mock returns a direct object in tests
+                result = PlanningResult.model_validate(response)
             logger.info(f"Planner strategy: {result.strategy}")
         except Exception as e:
             logger.error(f"Planning failed: {e}")
