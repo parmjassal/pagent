@@ -36,26 +36,29 @@ def build_dynamic_tree(session_id: str, user_id: str, model_name: str, task: Opt
         agents_tree.add("[dim]Initializing or no agents created yet...[/dim]")
         return tree
 
-    # --- Data Collection Pass ---
+    # --- Data Collection Pass: Recursively find all agents ---
     agents_data = {}
     child_to_parent_map = {}
 
-    agent_dirs = [d for d in agents_root.iterdir() if d.is_dir()]
-    for agent_dir in agent_dirs:
-        agent_name = agent_dir.name
+    # Recursively find all 'todo' directories, which signify an agent's workspace.
+    for todo_dir in agents_root.rglob("todo"):
+        agent_dir = todo_dir.parent
+        # The agent name is its path relative to the 'agents' directory
+        agent_name = str(agent_dir.relative_to(agents_root))
+        
         agents_data[agent_name] = {'path': agent_dir, 'todos': []}
         
-        todo_dir = agent_dir / "todo"
-        if todo_dir.exists():
-            for todo_file in sorted(todo_dir.glob("*.json")):
-                try:
-                    with open(todo_file, 'r') as f:
-                        todo_data = json.load(f)
-                        agents_data[agent_name]['todos'].append(todo_data)
-                        if todo_data.get('assigned_to'):
-                            child_to_parent_map[todo_data['assigned_to']] = agent_name
-                except (json.JSONDecodeError, IOError):
-                    continue # Ignore corrupted or unreadable files
+        for todo_file in sorted(todo_dir.glob("*.json")):
+            try:
+                with open(todo_file, 'r') as f:
+                    todo_data = json.load(f)
+                    agents_data[agent_name]['todos'].append(todo_data)
+                    assigned_agent = todo_data.get('assigned_to')
+                    if assigned_agent:
+                        # Map the assigned agent (child) to the current agent (parent)
+                        child_to_parent_map[assigned_agent] = agent_name
+            except (json.JSONDecodeError, IOError):
+                continue # Ignore corrupted or unreadable files
 
     # --- Tree Building Pass ---
     def get_status_style(status: Optional[str]) -> str:
@@ -70,7 +73,8 @@ def build_dynamic_tree(session_id: str, user_id: str, model_name: str, task: Opt
 
     def _build_subtree(parent_node: Tree, agent_name: str):
         if agent_name not in agents_data:
-            parent_node.add(f"⚠️ [bold red]Error:[/bold red] Agent '{agent_name}' defined but not found.")
+            # This case should now be rare due to the rglob discovery, but good for safety.
+            parent_node.add(f"⚠️ [bold red]Error:[/bold red] Agent '{agent_name}' data not found.")
             return
 
         agent_info = agents_data[agent_name]
@@ -81,19 +85,25 @@ def build_dynamic_tree(session_id: str, user_id: str, model_name: str, task: Opt
             assigned_agent = todo.get('assigned_to')
             if assigned_agent:
                 # This todo represents spawning a sub-agent
-                sub_agent_node = parent_node.add(f"🤖 [bold yellow]Agent: {assigned_agent}[/bold yellow] - Goal: {description} {status_style}")
-                _build_subtree(sub_agent_node, assigned_agent)
+                goal_text = f"🤖 [bold yellow]Agent: {assigned_agent}[/bold yellow] - Goal: {description} {status_style}"
+                
+                # Check if the assigned agent exists yet
+                if assigned_agent in agents_data:
+                    sub_agent_node = parent_node.add(goal_text)
+                    _build_subtree(sub_agent_node, assigned_agent)
+                else:
+                    # Agent is planned but not created yet
+                    parent_node.add(f"{goal_text} [dim](pending creation)[/dim]")
             else:
                 # This is a regular task for the current agent
                 parent_node.add(f"📝 Task: {description} {status_style}")
 
     # Find the root agent(s) (those not in the child_map)
-    root_agents = [name for name in agents_data if name not in child_to_parent_map]
+    root_agents = sorted([name for name in agents_data if name not in child_to_parent_map])
     
     if not root_agents and agents_data:
-         # Handle cases with loops or if all agents are children
-        root_agents = list(agents_data.keys())
-
+         # Handle cases with loops or if all agents are children by showing all as roots
+        root_agents = sorted(list(agents_data.keys()))
 
     for root_agent_name in root_agents:
         root_node = agents_tree.add(f"👑 [bold yellow]Root Agent: {root_agent_name}[/bold yellow]")
