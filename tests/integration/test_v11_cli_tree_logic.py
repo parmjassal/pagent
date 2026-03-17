@@ -3,7 +3,7 @@ from pathlib import Path
 from rich.console import Console
 from agent_platform.runtime.core.workspace import WorkspaceContext
 from agent_platform.runtime.core.resource_manager import SimpleCopyResourceManager, SessionInitializer
-from agent_platform.cli import build_dynamic_tree
+from agent_platform.cli import build_dynamic_tree, trim_value
 
 @pytest.fixture
 def cli_test_env(tmp_path):
@@ -45,6 +45,10 @@ def cli_test_env(tmp_path):
     (super_todo_path / "task_2.json").write_text(
         '{"description": "Invoke a tool with long value", "status": "completed", "type": "tool", "payload": {"name": "my_tool", "args": {"long_path": "' + long_path + '"}}}'
     )
+    long_description = "This is a very long description for an agent task that is designed to be over eighty characters long to properly test the new description trimming functionality."
+    (super_todo_path / "task_3.json").write_text(
+        '{"description": "' + long_description + '", "status": "pending"}'
+    )
 
     # orphan_worker tasks
     (orphan_todo_path / "task_x.json").write_text(
@@ -55,7 +59,8 @@ def cli_test_env(tmp_path):
         "user_id": user_id, 
         "session_id": session_id, 
         "session_path": session_path,
-        "workspace": workspace
+        "workspace": workspace,
+        "long_description": long_description,
     }
 
 def test_v11_build_dynamic_tree_filesystem_sync(cli_test_env):
@@ -97,6 +102,10 @@ def test_v11_build_dynamic_tree_filesystem_sync(cli_test_env):
     # Check for the correctly trimmed long path value (last 37 chars)
     assert "📝 Task: Invoke a tool with long value (long_path: ...longer/than/forty/characters/file.txt) (completed)" in output
     
+    # Assert for the new long, trimmed description
+    trimmed_description = trim_value(env["long_description"], 80)
+    assert f"📝 Task: {trimmed_description} (pending)" in output
+
     # 5. Assert that the 'Orphan Agents' section exists and contains the orphan
     assert "⚠️ Orphan Agents" in output
     assert "🤷 orphan_worker" in output

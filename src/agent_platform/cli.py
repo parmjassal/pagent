@@ -17,6 +17,12 @@ console = Console()
 
 import json
 
+def trim_value(value: str, max_length: int) -> str:
+    """Trims a string to a max length, prepending '...' if trimmed."""
+    if len(value) > max_length:
+        return f"...{value[-(max_length - 3):]}"
+    return value
+
 def build_dynamic_tree(session_id: str, user_id: str, model_name: str, task: Optional[str], session_path: Path) -> Tree:
     """Recursively builds a tree representing the current session, agents, and their tasks."""
     tree = Tree(f"🌳 [bold cyan]Session: {session_id}[/bold cyan]")
@@ -80,21 +86,26 @@ def build_dynamic_tree(session_id: str, user_id: str, model_name: str, task: Opt
         agent_info = agents_data[agent_id]
         for todo in agent_info['todos']:
             status_style = get_status_style(todo.get('status'))
-            description = todo.get('description', 'No description').replace('[', '(').replace(']', ')')
             
+            # 1. Get the base description and trim it to 80 characters
+            base_description = todo.get('description', 'No description').replace('[', '(').replace(']', ')')
+            display_description = trim_value(base_description, 80)
+            
+            # 2. If it's a tool, append its own trimmed info
             if todo.get('type') == 'tool':
                 args = todo.get('payload', {}).get('args', {})
                 if args:
                     first_arg_key = next(iter(args), None)
                     if first_arg_key:
                         value = str(args[first_arg_key])
-                        truncated_value = ('...' + value[-37:]) if len(value) > 40 else value
-                        description = f"{description} ({first_arg_key}: {truncated_value})"
+                        truncated_value = trim_value(value, 40)
+                        display_description = f"{display_description} ({first_arg_key}: {truncated_value})"
             
+            # 3. Build the final output string
             assigned_agent_id = todo.get('assigned_to')
             if assigned_agent_id:
                 simple_name = assigned_agent_id.split('/')[-1]
-                goal_text = f"🤖 [bold yellow]Agent: {simple_name}[/bold yellow] - Goal: {description} {status_style}"
+                goal_text = f"🤖 [bold yellow]Agent: {simple_name}[/bold yellow] - Goal: {display_description} {status_style}"
                 
                 if assigned_agent_id in agents_data:
                     sub_agent_node = parent_node.add(goal_text)
@@ -102,7 +113,7 @@ def build_dynamic_tree(session_id: str, user_id: str, model_name: str, task: Opt
                 else:
                     parent_node.add(f"{goal_text} [dim](pending creation)[/dim]")
             else:
-                parent_node.add(f"📝 Task: {description} {status_style}")
+                parent_node.add(f"📝 Task: {display_description} {status_style}")
 
     # --- Tree Rendering with Supervisor-First Logic ---
     if 'supervisor' in agents_data:
