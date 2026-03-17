@@ -52,7 +52,9 @@ def build_dynamic_tree(session_id: str, user_id: str, model_name: str, task: Opt
                     agents_data[agent_name]['todos'].append(todo_data)
                     assigned_agent = todo_data.get('assigned_to')
                     if assigned_agent:
-                        child_to_parent_map[assigned_agent] = agent_name
+                        # Construct the full path for the child and map it to the parent
+                        child_full_path = f"{agent_name}/{assigned_agent}"
+                        child_to_parent_map[child_full_path] = agent_name
             except (json.JSONDecodeError, IOError):
                 continue
 

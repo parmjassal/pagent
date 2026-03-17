@@ -39,7 +39,7 @@ def cli_test_env(tmp_path):
 
     # super agent tasks
     (super_todo_path / "task_1.json").write_text(
-        '{"description": "Delegate to a real child", "status": "in_progress", "assigned_to": "supervisor/real_child"}'
+        '{"description": "Delegate to a real child", "status": "in_progress", "assigned_to": "real_child"}'
     )
     long_path = "/a/very/long/path/that/is/definitely/going/to/be/longer/than/forty/characters/file.txt"
     (super_todo_path / "task_2.json").write_text(
