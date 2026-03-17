@@ -4,6 +4,7 @@ import secrets
 from typing import Dict, Any, List, Optional, Union
 from langchain_core.messages import SystemMessage, HumanMessage, BaseMessage, AIMessage
 from langchain_core.output_parsers import PydanticOutputParser
+from langchain_classic.output_parsers.retry import RetryWithErrorOutputParser
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
@@ -49,9 +50,16 @@ class OrchestratorAgent:
         """Thinker: Reviews history and writes a batch of tasks to the TODO list."""
         logger.info(f"Agent {state['agent_id']} entering planner_node.")
         
-        # Setup parser and inject format instructions into the prompt
-        parser = PydanticOutputParser(pydantic_object=PlanningResult)
+        # Setup parser for PlanningResult
+        pydantic_parser = PydanticOutputParser(pydantic_object=PlanningResult)
         
+        # Initialize RetryWithErrorOutputParser for robust parsing and retries
+        retry_parser = RetryWithErrorOutputParser.from_llm(
+            parser=pydantic_parser,
+            llm=self.llm,
+            max_retries=3 # Allow up to 3 retries for robust parsing
+        )
+
         # Resolve Template
         session_path = self.agent_factory.workspace.get_session_dir(state["user_id"], state["session_id"])
         
@@ -63,8 +71,8 @@ class OrchestratorAgent:
         if template_path.exists():
             system_instruction = template_path.read_text()
 
-        # Inject formatting instructions
-        system_instruction += "\n\n" + parser.get_format_instructions()
+        # The RetryWithErrorOutputParser will inject format instructions itself.
+        # So we explicitly *do not* add them here.
 
         # Inject Tool Manifest
         if self.tool_manifest:
@@ -77,25 +85,26 @@ class OrchestratorAgent:
             todo_summary = "\n".join([f"- [{t.status}] {t.task_id}: {t.title} ({t.type})" for t in all_tasks])
             system_instruction = f"{system_instruction}\n\n## Current Work Order (TODO List):\n{todo_summary}\n"
 
-        prompt = [
+        prompt_messages = [
             SystemMessage(content=system_instruction),
             *state["messages"]
         ]
         
         try:
-            response = await self.llm.ainvoke(prompt)
-            logger.debug(f"Planning Result is {response}")
-            # Robust Parsing
-            if hasattr(response, "content"):
-                # The robust_json_parser can handle markdown fences
-                parsed = robust_json_parser(response.content) or ""
-                result = PlanningResult.model_validate(parsed)
-            else:
-                # This path is for when the mock returns a direct object in tests
-                result = PlanningResult.model_validate(response)
+            # Generate the raw LLM response
+            raw_response = await self.llm.ainvoke(prompt_messages)
+            logger.debug(f"Planning Raw Response: {raw_response.content}")
+
+            # Use the retry_parser to parse the response.
+            # It handles markdown fences, Pydantic validation, and retries with the LLM.
+            result: PlanningResult = await retry_parser.aparse_with_prompt(
+                raw_response.content,
+                prompt_messages # Pass the full prompt for context during retry
+            )
+            
             logger.info(f"Planner strategy: {result.strategy}")
         except Exception as e:
-            logger.error(f"Planning failed: {e}")
+            logger.error(f"Planning failed after retries: {e}")
             return {"messages": [{"role": "user", "content": f"[System] Planning Error: {e}"}]}
 
         # Handle Plan

@@ -46,6 +46,7 @@ async def test_supervisor_planning_decompose(plan_env):
         strategy=ExecutionStrategy.DECOMPOSE,
         sub_tasks=[SubAgentTask(agent_id="new_helper", role=AgentRole.WORKER, instructions="Task")]
     )
+    # The initial call to self.llm.ainvoke in planner_node expects an object with a .content attribute.
     plan_env["mock_llm"].ainvoke.return_value = AIMessage(content=result_obj.model_dump_json())
 
     # Correct paths
@@ -74,6 +75,7 @@ async def test_supervisor_planning_tool_use(plan_env):
         strategy=ExecutionStrategy.TOOL_USE,
         tool_call=ToolCall(name="ls", args={"path": "."})
     )
+    # The initial call to self.llm.ainvoke in planner_node expects an object with a .content attribute.
     plan_env["mock_llm"].ainvoke.return_value = AIMessage(content=result_obj.model_dump_json())
 
     # Correct paths
