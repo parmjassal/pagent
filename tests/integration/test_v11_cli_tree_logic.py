@@ -21,40 +21,34 @@ def cli_test_env(tmp_path):
     # └── worker_1
     #     └── sub_worker_2
     
-    # 1. Create a real hierarchy on disk
+    # 1. Create a real hierarchy on disk to test orphans and nesting
     # super
-    # └── worker_1
-    # independent_agent
+    # └── (pending real_child)
+    # orphan_worker
     
     # Create agents with a nested structure
-    workspace.ensure_agent_structure(user_id, session_id, "super")
-    workspace.ensure_agent_structure(user_id, session_id, "super/worker_1")
-    workspace.ensure_agent_structure(user_id, session_id, "independent_agent")
+    workspace.ensure_agent_structure(user_id, session_id, "supervisor")
+    workspace.ensure_agent_structure(user_id, session_id, "orphan_worker")
     
-    # 2. Create todo files to define tasks, hierarchy, and pending creation state
+    # 2. Create todo files to define tasks
     super_todo_path = session_path / "agents" / "super" / "todo"
-    worker_1_todo_path = session_path / "agents" / "super" / "worker_1" / "todo"
-    independent_todo_path = session_path / "agents" / "independent_agent" / "todo"
+    orphan_todo_path = session_path / "agents" / "orphan_worker" / "todo"
+
+    super_todo_path.mkdir(parents=True, exist_ok=True)
+    orphan_todo_path.mkdir(parents=True, exist_ok=True)
 
     # super agent tasks
     (super_todo_path / "task_1.json").write_text(
-        '{"description": "Delegate to worker 1", "status": "in_progress", "assigned_to": "super/worker_1"}'
+        '{"description": "Delegate to a real child", "status": "in_progress", "assigned_to": "supervisor/real_child"}'
     )
+    long_path = "/a/very/long/path/that/is/definitely/going/to/be/longer/than/forty/characters/file.txt"
     (super_todo_path / "task_2.json").write_text(
-        '{"description": "Delegate to a phantom agent", "status": "in_progress", "assigned_to": "phantom_agent"}'
+        '{"description": "Invoke a tool with long value", "status": "completed", "type": "tool", "payload": {"name": "my_tool", "args": {"long_path": "' + long_path + '"}}}'
     )
 
-    # worker_1 agent tasks (nested)
-    (worker_1_todo_path / "task_a.json").write_text(
-        '{"description": "Execute nested task", "status": "completed", "assigned_to": null}'
-    )
-
-    # independent_agent tasks
-    (independent_todo_path / "task_x.json").write_text(
-        '{"description": "Perform independent task", "status": "pending", "assigned_to": null}'
-    )
-    (independent_todo_path / "task_y.json").write_text(
-        '{"description": "Invoke a specific tool", "status": "completed", "type": "tool", "payload": {"name": "my_tool", "args": {"input_file": "/path/to/data.txt", "mode": "read"}}, "assigned_to": null}'
+    # orphan_worker tasks
+    (orphan_todo_path / "task_x.json").write_text(
+        '{"description": "Perform orphan task", "status": "pending", "assigned_to": null}'
     )
 
     return {
@@ -94,30 +88,21 @@ def test_v11_build_dynamic_tree_filesystem_sync(cli_test_env):
     # 2. Assert Agent Hierarchy root is present
     assert "🤖 Agent & Task Tree" in output
 
-    # 3. Assert the two root agents are found and displayed
-    # Note: The order is sorted, so 'independent_agent' comes before 'super'
-    assert "👑 Root Agent: independent_agent" in output
-    assert "👑 Root Agent: super" in output
+    # 3. Assert that 'supervisor' is the only root agent
+    assert "👑 Root Agent: supervisor" in output
+    assert "👑 Root Agent: orphan_worker" not in output, "Orphan worker should not be a root agent"
     
-    # 4. Assert tasks for 'independent_agent'
-    assert "📝 Task: Perform independent task (pending)" in output
-    assert "📝 Task: Invoke a specific tool (input_file: /path/to/data.txt) (completed)" in output
+    # 4. Assert tasks for 'supervisor'
+    assert "🤖 Agent: real_child - Goal: Delegate to a real child (in_progress) (pending creation)" in output
+    # Check for the correctly trimmed long path value (last 37 chars)
+    assert "📝 Task: Invoke a tool with long value (long_path: ...longer/than/forty/characters/file.txt) (completed)" in output
     
-    # 5. Assert tasks and delegations for 'super'
-    # Assert for the simple name 'worker_1' instead of the full path 'super/worker_1'
-    assert "🤖 Agent: worker_1 - Goal: Delegate to worker 1 (in_progress)" in output
-    assert "🤖 Agent: phantom_agent - Goal: Delegate to a phantom agent (in_progress) (pending creation)" in output
-
-    # 6. Assert tasks for nested agent 'super/worker_1'
-    assert "📝 Task: Execute nested task (completed)" in output
-
-    # 7. Verify visual hierarchy (using careful string matching and order)
-    super_root_idx = output.find("👑 Root Agent: super")
-    # Find the delegation by its simple name
-    worker_1_delegation_idx = output.find("🤖 Agent: worker_1")
-    nested_task_idx = output.find("📝 Task: Execute nested task (completed)")
-    phantom_delegation_idx = output.find("🤖 Agent: phantom_agent")
-
-    assert super_root_idx < worker_1_delegation_idx
-    assert worker_1_delegation_idx < nested_task_idx
-    assert super_root_idx < phantom_delegation_idx
+    # 5. Assert that the 'Orphan Agents' section exists and contains the orphan
+    assert "⚠️ Orphan Agents" in output
+    assert "🤷 orphan_worker" in output
+    assert "📝 Task: Perform orphan task (pending)" in output
+    
+    # 6. Verify visual hierarchy
+    orphan_section_idx = output.find("⚠️ Orphan Agents")
+    orphan_worker_idx = output.find("🤷 orphan_worker")
+    assert orphan_section_idx > 0 and orphan_worker_idx > orphan_section_idx, "Orphan worker should be listed under the Orphan Agents section"

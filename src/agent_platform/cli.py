@@ -20,7 +20,7 @@ import json
 def build_dynamic_tree(session_id: str, user_id: str, model_name: str, task: Optional[str], session_path: Path) -> Tree:
     """Recursively builds a tree representing the current session, agents, and their tasks."""
     tree = Tree(f"🌳 [bold cyan]Session: {session_id}[/bold cyan]")
-    
+
     # 1. Infrastructure Info
     infra = tree.add("🔌 [bold]Infrastructure[/bold]")
     infra.add(f"👤 User: [green]{user_id}[/green]")
@@ -31,7 +31,7 @@ def build_dynamic_tree(session_id: str, user_id: str, model_name: str, task: Opt
     # 2. Agent Hierarchy
     agents_root = session_path / "agents"
     agents_tree = tree.add("🤖 [bold magenta]Agent & Task Tree[/bold magenta]")
-    
+
     if not agents_root.exists() or not any(agents_root.iterdir()):
         agents_tree.add("[dim]Initializing or no agents created yet...[/dim]")
         return tree
@@ -40,14 +40,11 @@ def build_dynamic_tree(session_id: str, user_id: str, model_name: str, task: Opt
     agents_data = {}
     child_to_parent_map = {}
 
-    # Recursively find all 'todo' directories, which signify an agent's workspace.
     for todo_dir in agents_root.rglob("todo"):
         agent_dir = todo_dir.parent
-        # The agent name is its path relative to the 'agents' directory
         agent_name = str(agent_dir.relative_to(agents_root))
-        
         agents_data[agent_name] = {'path': agent_dir, 'todos': []}
-        
+
         for todo_file in sorted(todo_dir.glob("*.json")):
             try:
                 with open(todo_file, 'r') as f:
@@ -55,12 +52,13 @@ def build_dynamic_tree(session_id: str, user_id: str, model_name: str, task: Opt
                     agents_data[agent_name]['todos'].append(todo_data)
                     assigned_agent = todo_data.get('assigned_to')
                     if assigned_agent:
-                        # Map the assigned agent (child) to the current agent (parent)
                         child_to_parent_map[assigned_agent] = agent_name
             except (json.JSONDecodeError, IOError):
-                continue # Ignore corrupted or unreadable files
+                continue
 
     # --- Tree Building Pass ---
+    rendered_agents = set()
+
     def get_status_style(status: Optional[str]) -> str:
         status_str = f"({status})" if status else ""
         if status == 'completed':
@@ -71,62 +69,68 @@ def build_dynamic_tree(session_id: str, user_id: str, model_name: str, task: Opt
             return f"[dim]{status_str}[/dim]"
         return f"[dim]{status_str}[/dim]"
 
-    def _build_subtree(parent_node: Tree, agent_name: str):
-        if agent_name not in agents_data:
-            # This case should now be rare due to the rglob discovery, but good for safety.
-            parent_node.add(f"⚠️ [bold red]Error:[/bold red] Agent '{agent_name}' data not found.")
+    def _build_subtree(parent_node: Tree, agent_id: str):
+        rendered_agents.add(agent_id)
+        if agent_id not in agents_data:
+            parent_node.add(f"⚠️ [bold red]Error:[/bold red] Agent '{agent_id}' data not found.")
             return
 
-        agent_info = agents_data[agent_name]
+        agent_info = agents_data[agent_id]
         for todo in agent_info['todos']:
             status_style = get_status_style(todo.get('status'))
             description = todo.get('description', 'No description').replace('[', '(').replace(']', ')')
-
-            # Enhance description for tool types with the first arg key-value pair
+            
             if todo.get('type') == 'tool':
                 args = todo.get('payload', {}).get('args', {})
                 if args:
                     first_arg_key = next(iter(args), None)
                     if first_arg_key:
                         value = str(args[first_arg_key])
-                        # Truncate long values
-                        truncated_value = value[:40] + '...' if len(value) > 40 else value
+                        truncated_value = ('...' + value[-37:]) if len(value) > 40 else value
                         description = f"{description} ({first_arg_key}: {truncated_value})"
-
+            
             assigned_agent_id = todo.get('assigned_to')
             if assigned_agent_id:
-                # This todo represents spawning a sub-agent
                 simple_name = assigned_agent_id.split('/')[-1]
                 goal_text = f"🤖 [bold yellow]Agent: {simple_name}[/bold yellow] - Goal: {description} {status_style}"
-
-                # Check if the assigned agent exists yet
+                
                 if assigned_agent_id in agents_data:
                     sub_agent_node = parent_node.add(goal_text)
                     _build_subtree(sub_agent_node, assigned_agent_id)
                 else:
-                    # Agent is planned but not created yet
                     parent_node.add(f"{goal_text} [dim](pending creation)[/dim]")
             else:
-                # This is a regular task for the current agent
                 parent_node.add(f"📝 Task: {description} {status_style}")
 
-    # Find the root agent(s) (those not in the child_map)
-    root_agents = sorted([name for name in agents_data if name not in child_to_parent_map])
-
-    if not root_agents and agents_data:
-         # Handle cases with loops or if all agents are children by showing all as roots
-        root_agents = sorted(list(agents_data.keys()))
-
-    for root_agent_id in root_agents:
-        simple_name = root_agent_id.split('/')[-1]
-        root_node = agents_tree.add(f"👑 [bold yellow]Root Agent: {simple_name}[/bold yellow]")
-        _build_subtree(root_node, root_agent_id)
+    # --- Tree Rendering with Supervisor-First Logic ---
+    if 'supervisor' in agents_data:
+        # Prioritize supervisor as the main root
+        root_node = agents_tree.add("👑 [bold yellow]Root Agent: supervisor[/bold yellow]")
+        _build_subtree(root_node, 'supervisor')
+    else:
+        # Fallback for when no supervisor exists
+        root_agents = sorted([name for name in agents_data if name not in child_to_parent_map])
+        if not root_agents and agents_data:
+            root_agents = sorted(list(agents_data.keys()))
+        
+        for root_agent_id in root_agents:
+            simple_name = root_agent_id.split('/')[-1]
+            root_node = agents_tree.add(f"👑 [bold yellow]Root Agent: {simple_name}[/bold yellow]")
+            _build_subtree(root_node, root_agent_id)
     
+    # After rendering the main tree(s), check for orphans
+    orphan_agents = sorted([name for name in agents_data if name not in rendered_agents])
+    if orphan_agents:
+        orphan_tree = agents_tree.add("⚠️ [bold orange]Orphan Agents[/bold orange]")
+        for orphan_id in orphan_agents:
+            simple_name = orphan_id.split('/')[-1]
+            orphan_node = orphan_tree.add(f"🤷 [bold red]{simple_name}[/bold red]")
+            _build_subtree(orphan_node, orphan_id)
+
     if not agents_data:
         agents_tree.add("[dim]No agents found.[/dim]")
 
     return tree
-
 async def run_platform(
     task: Optional[str],
     user_id: str,
