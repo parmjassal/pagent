@@ -39,11 +39,14 @@ async def test_supervisor_planning_decompose(plan_env):
     sup = plan_env["supervisor"]
     
     # 1. Mock DECOMPOSE strategy
-    plan_env["mock_llm"].ainvoke.return_value = PlanningResult(
+    # Mock the chain: llm.with_structured_output(..).ainvoke(...)
+    structured_llm_mock = AsyncMock()
+    structured_llm_mock.ainvoke.return_value = PlanningResult(
         thought_process="Complex task, need help.",
         strategy=ExecutionStrategy.DECOMPOSE,
         sub_tasks=[SubAgentTask(agent_id="new_helper", role=AgentRole.WORKER, instructions="Task")]
     )
+    plan_env["mock_llm"].with_structured_output = MagicMock(return_value=structured_llm_mock)
 
     # Correct paths
     agent_dir = plan_env["session_path"] / "agents" / "s1"
@@ -66,11 +69,14 @@ async def test_supervisor_planning_tool_use(plan_env):
     sup = plan_env["supervisor"]
     
     # 1. Mock TOOL_USE strategy
-    plan_env["mock_llm"].ainvoke.return_value = PlanningResult(
+    # Mock the chain: llm.with_structured_output(..).ainvoke(...)
+    structured_llm_mock = AsyncMock()
+    structured_llm_mock.ainvoke.return_value = PlanningResult(
         thought_process="Simple task, I'll do it myself.",
         strategy=ExecutionStrategy.TOOL_USE,
         tool_call=ToolCall(name="ls", args={"path": "."})
     )
+    plan_env["mock_llm"].with_structured_output = MagicMock(return_value=structured_llm_mock)
 
     # Correct paths
     agent_dir = plan_env["session_path"] / "agents" / "s1"

@@ -44,7 +44,6 @@ class OrchestratorAgent:
         self.unit_compiler = unit_compiler
         self.tool_manifest = tool_manifest
         self.result_hook = result_hook
-        self.parser = JsonOutputParser(pydantic_object=PlanningResult)
 
     async def planner_node(self, state: AgentState) -> AgentState:
         """Thinker: Reviews history and writes a batch of tasks to the TODO list."""
@@ -77,15 +76,12 @@ class OrchestratorAgent:
             *state["messages"]
         ]
         
+        # Use with_structured_output for robust, model-native JSON parsing
+        structured_llm = self.llm.with_structured_output(PlanningResult)
+        
         try:
-            response = await self.llm.ainvoke(prompt)
-            logger.debug(f"Planning Result is {response}")   
-            # Robust Parsing
-            if hasattr(response, "content"):
-                parsed = robust_json_parser(response.content) or ""
-                result = PlanningResult.model_validate(parsed)
-            else:
-                result = PlanningResult.model_validate(response)
+            result = await structured_llm.ainvoke(prompt)
+            logger.debug(f"Planning Result is {result}")
             logger.info(f"Planner strategy: {result.strategy}")
         except Exception as e:
             logger.error(f"Planning failed: {e}")
