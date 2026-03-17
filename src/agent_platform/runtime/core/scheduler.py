@@ -191,6 +191,7 @@ class AutonomousScheduler:
                 openai_api_base=self.model_config["openai_base_url"],
                 http_client=http_client,
                 temperature=0,
+                max_tokens=10000,
                 model_kwargs={
                     "response_format": {"type": "json_object"}
                     }

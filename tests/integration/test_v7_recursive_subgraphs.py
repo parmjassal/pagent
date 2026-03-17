@@ -1,6 +1,7 @@
 import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
+from langchain_core.messages import AIMessage
 from agent_platform.runtime.core.workspace import WorkspaceContext
 from agent_platform.runtime.core.resource_manager import SimpleCopyResourceManager, SessionInitializer
 from agent_platform.runtime.core.agent_factory import AgentFactory
@@ -30,11 +31,11 @@ def v7_env(tmp_path):
     result_hook = OffloadingResultHook(session_path / "knowledge")
     
     mock_llm = AsyncMock()
-    mock_llm.ainvoke.return_value = PlanningResult(
+    mock_llm.ainvoke.return_value = AIMessage(content=PlanningResult(
         thought_process="Spawning worker for unit test.",
         strategy=ExecutionStrategy.DECOMPOSE,
         sub_tasks=[SubAgentTask(agent_id="worker_1", role=AgentRole.WORKER, instructions="Do work")]
-    )
+    ).model_dump_json())
 
     generator = SystemGeneratorAgent(llm=AsyncMock(), workspace=workspace)
     # Mock generator for executor_node

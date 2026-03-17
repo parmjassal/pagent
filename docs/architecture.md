@@ -68,18 +68,84 @@ The workspace root organizes data to support multi-tenancy and lexical scoping.
         -   `global_context/`: Shared facts (Lexical scoping).
         -   `state.db`: LangGraph SQLite checkpointer.
 
+```mermaid
+graph TD
+    A(session_id) --> B(agents);
+    A --> C(knowledge);
+    
+    subgraph agents
+        B --> D(supervisor);
+        B --> E(independent_agent);
+    end
+
+    subgraph supervisor
+        D --> D_todo(todo/);
+        D --> D_worker(worker_1);
+    end
+    
+    subgraph worker_1
+        D_worker --> D_worker_todo(todo/);
+    end
+    
+    subgraph independent_agent
+        E --> E_todo(todo/);
+    end
+```
+
 ---
 
 ## 3. Recursive Orchestration Model
 
-The platform uses a **Recursive Unit** model where a single thread manages a tree of subgraphs.
+The platform uses a **Recursive Unit** model where a single thread manages a tree of subgraphs. Delegation and task management are handled via a `todo.json` schema within each agent's `todo/` directory.
+
+### The `todo.json` Schema
+
+Each file in an agent's `todo/` directory represents a single task or delegation.
+
+-   `description`: (string) A high-level description of the task or the goal for a delegated sub-agent.
+-   `status`: (string) The current state of the task, e.g., `pending`, `in_progress`, `completed`.
+-   `type`: (string) The nature of the task, typically `agent` for delegation or `tool` for tool execution.
+-   `assigned_to`: (string | null) If `type` is `agent`, this field contains the unique ID (relative path) of the sub-agent responsible for the task. If null, the task is for the current agent.
+-   `payload`: (object) If `type` is `tool`, this contains the tool name and arguments (e.g., `{"name": "read_file", "args": {"file_path": "..."}}`).
 
 ### The Flow
-1.  **Planning:** Supervisor decides between `DECOMPOSE`, `TOOL_USE`, or `FINISH`.
-2.  **Spawning:** Supervisor awaits a subgraph compiled by the `UnitCompiler`.
-3.  **Lexical Visibility:** Sub-agents recursively lookup `global_context` folders up to the session root.
-4.  **Result Offloading:** Large outputs are intercepted by the `ResultHook`, stored as files, and returned as references.
-5.  **Merge:** Only the `final_result` of a child is merged back into the parent's message history.
+
+1.  **Planning:** The `Supervisor` agent decides to delegate a task. It writes a new `todo.json` file to its own `todo/` directory with `type: "agent"` and an `assigned_to` field pointing to a sub-agent's unique ID.
+2.  **Discovery & Execution:** The `AutonomousScheduler` discovers this new `todo` item. It is responsible for initializing the sub-agent's workspace if it doesn't exist and triggering its execution graph.
+3.  **Lexical Visibility:** Sub-agents recursively lookup `global_context` folders up to the session root to read shared facts.
+4.  **Result Offloading:** Large outputs from tool calls are intercepted by the `ResultHook`, stored as files in the `knowledge/` directory, and the file reference is returned in the result.
+5.  **Completion:** When a sub-agent completes its entire goal, its parent agent is responsible for updating the original `todo.json`'s status to `completed`.
+
+```mermaid
+sequenceDiagram
+    participant Supervisor as Supervisor Agent
+    participant FS as Filesystem (todo/)
+    participant Scheduler as Autonomous Scheduler
+    participant SubAgent as Sub-Agent
+
+    Supervisor->>+FS: Write todo.json (assigned_to: "worker_1")
+    FS-->>-Supervisor: Ack
+    
+    loop Discovery
+        Scheduler->>+FS: Scan for new todos
+        FS-->>-Scheduler: Return new todo.json
+    end
+
+    Scheduler->>FS: Create workspace for "worker_1"
+    Scheduler->>SubAgent: Invoke execution graph for "worker_1"
+    
+    activate SubAgent
+    SubAgent->>SubAgent: Execute task...
+    SubAgent-->>Scheduler: Return final result
+    deactivate SubAgent
+
+    Scheduler->>Supervisor: Deliver result from "worker_1"
+    
+    activate Supervisor
+    Supervisor->>+FS: Update todo.json (status: "completed")
+    FS-->>-Supervisor: Ack
+    deactivate Supervisor
+```
 
 ---
 

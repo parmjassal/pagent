@@ -94,21 +94,20 @@ class OrchestratorAgent:
             system_instruction = template_path.read_text()
 
         if self.tool_manifest:
-            system_instruction = f"{system_instruction}
+            system_instruction = f"""{system_instruction}
 
 ## Available Tools:
-{self.tool_manifest}"
+{self.tool_manifest}"""
         
         todo_mgr = TODOManager(state["todo_path"].parent)
         all_tasks = todo_mgr.list_tasks()
         if all_tasks:
-            todo_summary = "
-".join([f"- [{t.status}] {t.task_id}: {t.title} ({t.type})" for t in all_tasks])
-            system_instruction = f"{system_instruction}
+            todo_summary = "\n".join([f"- [{t.status}] {t.task_id}: {t.title} ({t.type})" for t in all_tasks])
+            system_instruction = f"""{system_instruction}
 
 ## Current Work Order (TODO List):
 {todo_summary}
-"
+"""
 
         #  FIX: normalize messages
         prompt_messages = [
@@ -123,8 +122,7 @@ class OrchestratorAgent:
 
             # Normalize completion
             if isinstance(raw_response, list):
-                completion = "
-".join(
+                completion = "\n".join(
                     m.content if hasattr(m, "content") else str(m)
                     for m in raw_response
                 )
@@ -241,8 +239,8 @@ class OrchestratorAgent:
                 content=f"Executing tool {tool_call['name']} for task {task.task_id}...",
                 tool_calls=[{
                     "id": tool_call_id,
-                    "type": "function",
-                    "function": {"name": tool_call["name"], "arguments": json.dumps(tool_call["args"])}
+                    "name": tool_call["name"],
+                    "args": tool_call["args"]
                 }]
             ))
         elif task.type == TaskType.AGENT: # Handle AGENT type as a tool_call
@@ -255,11 +253,11 @@ class OrchestratorAgent:
                 content=f"Delegating to sub-agent {task.assigned_to} for task {task.task_id}...", 
                 tool_calls=[{
                     "id": tool_call_id,
-                    "type": "function",
-                    "function": {"name": "delegate_to_agent", "arguments": json.dumps({
+                    "name": "delegate_to_agent",
+                    "args": {
                         "agent_id": task.assigned_to, 
                         "instructions": task.description
-                    })}
+                    }
                 }]
             ))
             
@@ -332,31 +330,65 @@ class OrchestratorAgent:
         task_id = task_data["task_id"]
         todo_mgr = TODOManager(state["todo_path"].parent)
         
+        # Unified tool_call_id tracking
+        next_tool_call = state["metadata"].get("next_tool_call")
+        tool_call_id = next_tool_call.get("id") if next_tool_call else None
+        tool_name = next_tool_call.get("name") if next_tool_call else "delegate_to_agent"
+        
         # Result can come from ToolNode (as a new message) or ExecutorNode (as metadata)
         result = state["metadata"].get("task_result")
         error = state["metadata"].get("task_error")
         
         # If result is not in metadata, it might be the last message (from ToolNode)
-        if not result and not error:
-            last_msg = state["messages"][-1]
-            if isinstance(last_msg, dict):
-                role = last_msg.get("role")
-                content = last_msg.get("content")
-            else:
-                role = getattr(last_msg, "role", None)
-                content = getattr(last_msg, "content", None)
-            
-            if role in ("tool", "user"):
-                result = content
+        if not result and not error and state["messages"]:
+            # ToolNode might have added multiple messages (result + log)
+            # We look for the one with role 'tool' or 'user' containing the result
+            for msg in reversed(state["messages"]):
+                if isinstance(msg, dict):
+                    role = msg.get("role")
+                    content = msg.get("content")
+                else:
+                    role = getattr(msg, "role", None)
+                    content = getattr(msg, "content", None)
+                
+                if role in ("tool", "user"):
+                    result = content
+                    break
 
         status = TaskStatus.FAILED if error else TaskStatus.COMPLETED
         final_val = error if error else result
         
         todo_mgr.update_status(task_id, status, result={"output": final_val})
         
+        # Determine if we need to add a message to the state
+        msg_update = []
+        is_already_present = False
+        
+        if tool_call_id and state["messages"]:
+            # Check if ToolNode already added a 'tool' message for this ID
+            for msg in reversed(state["messages"]):
+                if isinstance(msg, dict) and msg.get("role") == "tool" and msg.get("tool_call_id") == tool_call_id:
+                    is_already_present = True
+                    break
+                elif hasattr(msg, "tool_call_id") and getattr(msg, "tool_call_id") == tool_call_id:
+                    is_already_present = True
+                    break
+
+        if tool_call_id and not is_already_present:
+            # AGENT tasks (handled by executor_node) need a 'tool' message to match the dispatcher's AIMessage
+            msg_update.append({
+                "role": "tool", 
+                "name": tool_name, 
+                "content": str(final_val), 
+                "tool_call_id": tool_call_id
+            })
+        
+        # Always add a system log message for clarity in the UI/logs
+        msg_update.append({"role": "user", "content": f"[System] Task {task_id} finished: {str(final_val)[:200]}..."})
+        
         # Clean up transient metadata
         return {
-            "messages": [{"role": "user", "content": f"[System] Task {task_id} finished: {str(final_val)[:200]}..."}],
+            "messages": msg_update,
             "metadata": {"next_task": None, "task_result": None, "task_error": None, "next_tool_call": None}
         }
 

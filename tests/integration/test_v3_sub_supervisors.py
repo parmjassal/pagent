@@ -1,6 +1,7 @@
 import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
+from langchain_core.messages import AIMessage
 from agent_platform.runtime.orch.state import create_initial_state, AgentRole
 from agent_platform.runtime.orch.quota import update_quota
 from agent_platform.runtime.agents.orchestrator import OrchestratorAgent
@@ -17,11 +18,11 @@ def v3_env(tmp_path):
     
     # MOCK LLM ASYNC
     mock_llm = AsyncMock()
-    mock_llm.ainvoke.return_value = PlanningResult(
+    mock_llm.ainvoke.return_value = AIMessage(content=PlanningResult(
         thought_process="Spawning sub-super",
         strategy=ExecutionStrategy.DECOMPOSE,
         sub_tasks=[SubAgentTask(agent_id="sub_supervisor_01", role=AgentRole.SUPERVISOR, instructions="Task")]
-    )
+    ).model_dump_json())
 
     # Mock generator to return a dict with generated_output
     mock_generator = AsyncMock()

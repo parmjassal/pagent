@@ -1,6 +1,7 @@
 import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock
+from langchain_core.messages import AIMessage
 from agent_platform.runtime.core.workspace import WorkspaceContext
 from agent_platform.runtime.core.resource_manager import SimpleCopyResourceManager, SessionInitializer
 from agent_platform.runtime.core.agent_factory import AgentFactory
@@ -29,16 +30,16 @@ def integ_env(tmp_path):
     # For Orchestrator, it returns to dispatcher then back to planner.
     mock_llm.ainvoke.side_effect = [
         # Call 1: Planner decides to DECOMPOSE
-        PlanningResult(
+        AIMessage(content=PlanningResult(
             thought_process="Decomposing...",
             strategy=ExecutionStrategy.DECOMPOSE,
             sub_tasks=[SubAgentTask(agent_id="researcher_1", role=AgentRole.WORKER, instructions="Task")]
-        ),
+        ).model_dump_json()),
         # Call 2: Planner sees researcher_1 finished (mocked) and finishes
-        PlanningResult(
+        AIMessage(content=PlanningResult(
             thought_process="Done.",
             strategy=ExecutionStrategy.FINISH
-        )
+        ).model_dump_json())
     ]
     mock_gen_llm = AsyncMock()
     mock_gen_llm.ainvoke.return_value.content = "SYSTEM PROMPT"

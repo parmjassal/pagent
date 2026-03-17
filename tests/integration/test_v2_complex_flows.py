@@ -1,6 +1,7 @@
 import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
+from langchain_core.messages import AIMessage
 from agent_platform.runtime.core.workspace import WorkspaceContext
 from agent_platform.runtime.core.resource_manager import SimpleCopyResourceManager, SessionInitializer
 from agent_platform.runtime.core.agent_factory import AgentFactory
@@ -55,11 +56,11 @@ async def test_v2_recursive_depth_and_handover(v2_env):
     env = v2_env
     orchestrator = env["orchestrator"]
     
-    env["mock_sup_llm"].ainvoke.return_value = PlanningResult(
+    env["mock_sup_llm"].ainvoke.return_value = AIMessage(content=PlanningResult(
         thought_process="Spawning L1",
         strategy=ExecutionStrategy.DECOMPOSE,
         sub_tasks=[SubAgentTask(agent_id="agent_l1", role=AgentRole.WORKER, instructions="Task")]
-    )
+    ).model_dump_json())
 
     # Correct paths
     agent_dir = env["session_path"] / "agents" / "super"
@@ -75,11 +76,11 @@ async def test_v2_recursive_depth_and_handover(v2_env):
     state["quota"] = update_quota(state["quota"], res_exec1["quota"])
     
     # 2. Spawn L2 from L1
-    env["mock_sup_llm"].ainvoke.return_value = PlanningResult(
+    env["mock_sup_llm"].ainvoke.return_value = AIMessage(content=PlanningResult(
         thought_process="Spawning L2",
         strategy=ExecutionStrategy.DECOMPOSE,
         sub_tasks=[SubAgentTask(agent_id="agent_l2", role=AgentRole.WORKER, instructions="Task")]
-    )
+    ).model_dump_json())
     state["agent_id"] = "super/agent_l1" 
     state["current_depth"] = 1
     state["messages"] = [] 
@@ -107,12 +108,12 @@ async def test_v2_validation_positive_negative(v2_env):
     state = create_initial_state("a1", env["user_id"], env["session_id"], Path("/tmp"), Path("/tmp"))
 
     state["generated_output"] = "safe code"
-    env["mock_val_llm"].ainvoke.return_value = ValidationResult(is_valid=True, reasoning="Safe")
+    env["mock_val_llm"].ainvoke.return_value = AIMessage(content=ValidationResult(is_valid=True, reasoning="Safe").model_dump_json())
     val_res = await validator.validate_node(state)
     assert val_res["is_valid"] is True
 
     state["generated_output"] = "destructive code"
-    env["mock_val_llm"].ainvoke.return_value = ValidationResult(is_valid=False, reasoning="Violation")
+    env["mock_val_llm"].ainvoke.return_value = AIMessage(content=ValidationResult(is_valid=False, reasoning="Violation").model_dump_json())
     val_res_fail = await validator.validate_node(state)
     assert val_res_fail["is_valid"] is False
 

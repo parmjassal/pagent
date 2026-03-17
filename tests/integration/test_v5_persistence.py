@@ -3,6 +3,7 @@ import aiosqlite
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langchain_core.messages import AIMessage
 from agent_platform.runtime.core.workspace import WorkspaceContext
 from agent_platform.runtime.core.resource_manager import SimpleCopyResourceManager, SessionInitializer
 from agent_platform.runtime.core.agent_factory import AgentFactory
@@ -29,15 +30,15 @@ def persistence_env(tmp_path):
     mock_llm = AsyncMock()
     # Initial planning node mock
     mock_llm.ainvoke.side_effect = [
-        PlanningResult(
+        AIMessage(content=PlanningResult(
             thought_process="Persistence Step 1",
             strategy=ExecutionStrategy.DECOMPOSE,
             sub_tasks=[SubAgentTask(agent_id="worker_1", role=AgentRole.WORKER, instructions="Task")]
-        ),
-        PlanningResult(
+        ).model_dump_json()),
+        AIMessage(content=PlanningResult(
             thought_process="Resuming...",
             strategy=ExecutionStrategy.FINISH
-        )
+        ).model_dump_json())
     ]
 
     # Generator output mock

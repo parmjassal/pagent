@@ -6,6 +6,7 @@
 - [ ] **Persistence & Visibility:** Ensure task results are correctly summarized in the Planner's message history and offloaded when necessary.
 - [ ] **Legacy Deprecation:** Safely remove `supervisor.py` and `worker.py` after ensuring feature parity.
 - [ ] **Integration Test Migration:** Refactor all 23 integration tests to work with the unified `Orchestrator` model, ensuring Role-specific behavior is maintained via prompts.
+- [ ] **Orchestrator Refactor:** Simplify `orchestrator.py` by extracting node logic (Planner, Dispatcher, Executor, Collector) into dedicated handlers to improve readability and testability.
 
 ## Refined Context & Knowledge Orchestration (v2.1)
 - [x] **Unified Context Interface:** Refactor `ContextTools` to handle hierarchical `update_context` and global `update_knowledge`.

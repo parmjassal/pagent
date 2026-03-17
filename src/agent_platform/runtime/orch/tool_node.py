@@ -52,12 +52,22 @@ class AgentToolNode:
         # preceded by an 'assistant' message containing the corresponding 'tool_calls'.
         last_msg = state["messages"][-1] if state["messages"] else {}
         
+        # Normalize last_msg for checking
+        last_role = None
+        last_tool_calls = []
+        if isinstance(last_msg, dict):
+            last_role = last_msg.get("role")
+            last_tool_calls = last_msg.get("tool_calls", [])
+        else:
+            last_role = getattr(last_msg, "role", None)
+            # AIMessage has tool_calls attribute
+            last_tool_calls = getattr(last_msg, "tool_calls", [])
+
         # Validate if we can safely use the 'tool' role
         can_use_tool_role = False
-        if tool_call_id and last_msg.get("role") == "assistant" and "tool_calls" in last_msg:
+        if tool_call_id and last_role in ("assistant", "ai") and last_tool_calls:
             # Check if the tool_call_id matches any of the calls in the preceding message
-            calls = last_msg.get("tool_calls", [])
-            if any(c.get("id") == tool_call_id for c in calls):
+            if any(c.get("id") == tool_call_id if isinstance(c, dict) else getattr(c, "id", None) == tool_call_id for c in last_tool_calls):
                 can_use_tool_role = True
 
         if can_use_tool_role:

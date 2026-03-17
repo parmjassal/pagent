@@ -1,11 +1,12 @@
 from typing import Dict, Any, Optional, Tuple, Union
 import logging
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, BaseMessage
 from langchain_core.output_parsers import JsonOutputParser
 from ..orch.state import AgentState
 from ..core.workspace import WorkspaceContext
 from ..orch.models import ValidationResult
+from ..core.parser import robust_json_parser
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,30 @@ class SystemValidatorAgent:
         logger.debug(f"Validator Input: {instruction}")
         
         raw_result = await self.llm.ainvoke([SystemMessage(content=instruction)])
-        result = ValidationResult.model_validate(raw_result)
+        
+        # 4. Robust Parsing
+        completion = None
+        result = None
+        
+        if isinstance(raw_result, BaseMessage):
+            completion = raw_result.content
+        elif isinstance(raw_result, dict):
+            # Already parsed by JsonOutputParser?
+            result = ValidationResult.model_validate(raw_result)
+        else:
+            completion = str(raw_result)
+            
+        if completion is not None:
+            try:
+                parsed = robust_json_parser(completion)
+                result = ValidationResult.model_validate(parsed)
+            except Exception as e:
+                logger.error(f"Validator parsing failed: {e}. Raw: {completion}")
+                # Fallback to invalid if it can't be parsed
+                result = ValidationResult(is_valid=False, reasoning=f"Parsing error: {e}")
+        
+        if result is None:
+             result = ValidationResult(is_valid=False, reasoning="Empty or invalid response from LLM")
 
         logger.debug(f"Validator Result: {result.model_dump_json()}")
         log_msg = f"Validator: is_valid={result.is_valid}, reason='{result.reasoning}'"

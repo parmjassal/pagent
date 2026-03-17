@@ -1,6 +1,7 @@
 import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
+from langchain_core.messages import AIMessage
 from agent_platform.runtime.core.workspace import WorkspaceContext
 from agent_platform.runtime.core.resource_manager import SimpleCopyResourceManager, SessionInitializer
 from agent_platform.runtime.core.agent_factory import AgentFactory
@@ -31,11 +32,11 @@ def repo_env(tmp_path):
     mailbox = Mailbox(FilesystemMailboxProvider(session_path))
     
     mock_llm = AsyncMock()
-    mock_llm.ainvoke.return_value = PlanningResult(
+    mock_llm.ainvoke.return_value = AIMessage(content=PlanningResult(
         thought_process="Decomposing for repo analysis.",
         strategy=ExecutionStrategy.DECOMPOSE,
         sub_tasks=[SubAgentTask(agent_id="analyst_agent", role=AgentRole.WORKER, instructions="Index and query.")]
-    )
+    ).model_dump_json())
 
     mock_gen_llm = AsyncMock()
     mock_gen_llm.ainvoke.return_value.content = "SYSTEM PROMPT"

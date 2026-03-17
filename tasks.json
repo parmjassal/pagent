@@ -1,0 +1,10 @@
+{
+  "tasks": [
+    {
+      "id": "refactor-orchestrator",
+      "title": "Orchestrator Refactor",
+      "description": "Simplify orchestrator.py by extracting node logic (Planner, Dispatcher, Executor, Collector) into dedicated handlers to improve readability and testability.",
+      "status": "TODO"
+    }
+  ]
+}

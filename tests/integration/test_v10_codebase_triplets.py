@@ -1,6 +1,7 @@
 import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
+from langchain_core.messages import AIMessage
 from agent_platform.runtime.core.workspace import WorkspaceContext
 from agent_platform.runtime.core.resource_manager import SimpleCopyResourceManager, SessionInitializer
 from agent_platform.runtime.core.agent_factory import AgentFactory
@@ -87,51 +88,51 @@ async def test_v10_triplet_extraction_workflow(v10_env):
     mock_sup_llm = AsyncMock()
     mock_sup_llm.ainvoke.side_effect = [
         # Turn 1: Build Index
-        PlanningResult(
+        AIMessage(content=PlanningResult(
             thought_process="Indexing codebase.",
             strategy=ExecutionStrategy.TOOL_USE,
             tool_call=ToolCall(name="build_index", args={"path": str(env["repo_path"])})
-        ),
+        ).model_dump_json()),
         # Turn 2: Decompose task to expert
-        PlanningResult(
+        AIMessage(content=PlanningResult(
             thought_process="Spawning analyst for triplets.",
             strategy=ExecutionStrategy.DECOMPOSE,
             sub_tasks=[SubAgentTask(agent_id="analyst_01", role=AgentRole.WORKER, instructions="Extract cloud triplets.")]
-        ),
+        ).model_dump_json()),
         # Turn 3: Received result -> Store in context
-        PlanningResult(
+        AIMessage(content=PlanningResult(
             thought_process="Received triplets. Storing in global context.",
             strategy=ExecutionStrategy.TOOL_USE,
             tool_call=ToolCall(name="update_context", args={
                 "fact_id": "arch_triplets", 
                 "content": "(OrderProcessor, uses, DynamoDB), (OrderProcessor, publishes, SQS), (OrderProcessor, concurrency, 5)"
             })
-        ),
+        ).model_dump_json()),
         # Turn 4: Done
-        PlanningResult(thought_process="Audit done.", strategy=ExecutionStrategy.FINISH)
+        AIMessage(content=PlanningResult(thought_process="Audit done.", strategy=ExecutionStrategy.FINISH).model_dump_json())
     ]
 
     # Worker logic
     mock_work_llm = AsyncMock()
     mock_work_llm.ainvoke.side_effect = [
         # Worker Turn 1: Search Java
-        PlanningResult(
+        AIMessage(content=PlanningResult(
             thought_process="Searching Java logic.",
             strategy=ExecutionStrategy.TOOL_USE,
             tool_call=ToolCall(name="semantic_search", args={"query": "DynamoDB SQS"})
-        ),
+        ).model_dump_json()),
         # Worker Turn 2: Search Infra
-        PlanningResult(
+        AIMessage(content=PlanningResult(
             thought_process="Searching Terraform logic.",
             strategy=ExecutionStrategy.TOOL_USE,
             tool_call=ToolCall(name="semantic_search", args={"query": "lambda concurrency"})
-        ),
+        ).model_dump_json()),
         # Worker Turn 3: Final Answer
-        PlanningResult(
+        AIMessage(content=PlanningResult(
             thought_process="Extraction complete.",
             strategy=ExecutionStrategy.FINISH,
             final_answer="Extracted triplets for OrderProcessor."
-        )
+        ).model_dump_json())
     ]
 
     # 3. Setup UnitCompiler with injected mocks

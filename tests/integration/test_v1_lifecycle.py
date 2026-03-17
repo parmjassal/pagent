@@ -1,6 +1,7 @@
 import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
+from langchain_core.messages import AIMessage
 from agent_platform.runtime.core.workspace import WorkspaceContext
 from agent_platform.runtime.core.resource_manager import SimpleCopyResourceManager, SessionInitializer
 from agent_platform.runtime.core.agent_factory import AgentFactory
@@ -37,22 +38,22 @@ def v1_env(tmp_path):
     
     mock_sup_llm = AsyncMock()
     mock_sup_llm.ainvoke.side_effect = [
-        PlanningResult(
+        AIMessage(content=PlanningResult(
             thought_process="Mock thought",
             strategy=ExecutionStrategy.DECOMPOSE,
             sub_tasks=[SubAgentTask(agent_id="researcher_1", role=AgentRole.WORKER, instructions="Research")]
-        ),
-        PlanningResult(
+        ).model_dump_json()),
+        AIMessage(content=PlanningResult(
             thought_process="Done.",
             strategy=ExecutionStrategy.FINISH
-        )
+        ).model_dump_json())
     ]
 
     mock_gen_llm = AsyncMock()
     mock_gen_llm.ainvoke.return_value.content = "def researcher_1_func(): return 'mocked'"
 
     mock_val_llm = AsyncMock()
-    mock_val_llm.ainvoke.return_value = ValidationResult(is_valid=True, reasoning="Passed")
+    mock_val_llm.ainvoke.return_value = AIMessage(content=ValidationResult(is_valid=True, reasoning="Passed").model_dump_json())
 
     mock_policy_gen = MagicMock(spec=PolicyGenerator)
     mock_policy_gen.generate.return_value = (True, "Allowed")
@@ -101,7 +102,7 @@ async def test_v1_full_platform_lifecycle_with_mocks(v1_env):
     # Inject mock generated output for validator to check
     final_state["generated_output"] = "MOCK CODE CONTENT"
 
-    v1_env["mock_val_llm"].ainvoke.return_value = ValidationResult(is_valid=False, reasoning="Violation: destructive")
+    v1_env["mock_val_llm"].ainvoke.return_value = AIMessage(content=ValidationResult(is_valid=False, reasoning="Violation: destructive").model_dump_json())
     val_res = await validator.validate_node(final_state)
     assert val_res["is_valid"] is False
 

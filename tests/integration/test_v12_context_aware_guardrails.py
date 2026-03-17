@@ -1,6 +1,7 @@
 import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
+from langchain_core.messages import AIMessage
 from agent_platform.runtime.core.workspace import WorkspaceContext
 from agent_platform.runtime.core.guardrails import GuardrailManager, PolicyGenerator
 from agent_platform.runtime.core.context_store import FilesystemContextStore
@@ -98,7 +99,7 @@ async def test_orchestrator_planning_manifest_injection(guardrail_env):
     """Verifies that OrchestratorAgent injects the tool manifest into system prompt during planning."""
     env = guardrail_env
     mock_llm = AsyncMock()
-    mock_llm.ainvoke.return_value = PlanningResult(thought_process="...", strategy=ExecutionStrategy.FINISH)
+    mock_llm.ainvoke.return_value = AIMessage(content=PlanningResult(thought_process="...", strategy=ExecutionStrategy.FINISH).model_dump_json())
     
     manifest = "## Available Tools\n- **ls**: list files"
     orchestrator = OrchestratorAgent(

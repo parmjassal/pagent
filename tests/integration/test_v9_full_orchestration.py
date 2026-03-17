@@ -1,6 +1,7 @@
 import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+from langchain_core.messages import AIMessage
 from agent_platform.runtime.core.workspace import WorkspaceContext
 from agent_platform.runtime.core.resource_manager import SimpleCopyResourceManager, SessionInitializer
 from agent_platform.runtime.core.agent_factory import AgentFactory
@@ -75,50 +76,50 @@ async def test_v9_full_architectural_audit_flow(v9_env):
     mock_sup_llm = AsyncMock()
     mock_sup_llm.ainvoke.side_effect = [
         # Turn 1: Build Index (TOOL_USE)
-        PlanningResult(
+        AIMessage(content=PlanningResult(
             thought_process="I need to index the repo first.",
             strategy=ExecutionStrategy.TOOL_USE,
             tool_call=ToolCall(name="build_index", args={"path": str(env["repo_path"])})
-        ),
+        ).model_dump_json()),
         # Turn 2: Spawn Worker (DECOMPOSE)
-        PlanningResult(
+        AIMessage(content=PlanningResult(
             thought_process="Index built. Spawning worker to find logging patterns.",
             strategy=ExecutionStrategy.DECOMPOSE,
             sub_tasks=[SubAgentTask(agent_id="analyst", role=AgentRole.WORKER, instructions="Find logging standards.")]
-        ),
+        ).model_dump_json()),
         # Turn 3: Received worker result -> Update Context (TOOL_USE)
-        PlanningResult(
+        AIMessage(content=PlanningResult(
             thought_process="Worker found 'standard' logger. Promoting to global context.",
             strategy=ExecutionStrategy.TOOL_USE,
             tool_call=ToolCall(name="update_context", args={"fact_id": "logging_std", "content": "The project uses 'standard' logger."})
-        ),
+        ).model_dump_json()),
         # Turn 4: Final verification and finish (FINISH)
-        PlanningResult(
+        AIMessage(content=PlanningResult(
             thought_process="Audit complete.",
             strategy=ExecutionStrategy.FINISH
-        )
+        ).model_dump_json())
     ]
 
     # 2. Mock LLM for Orchestrator (Worker role)
     mock_work_llm = AsyncMock()
     mock_work_llm.ainvoke.side_effect = [
         # Turn 1: Search repo (TOOL_USE)
-        PlanningResult(
+        AIMessage(content=PlanningResult(
             thought_process="Searching for logging in repo.",
             strategy=ExecutionStrategy.TOOL_USE,
             tool_call=ToolCall(name="semantic_search", args={"query": "logging setup"})
-        ),
+        ).model_dump_json()),
         # Turn 2: Read file found (TOOL_USE)
-        PlanningResult(
+        AIMessage(content=PlanningResult(
             thought_process="Found server.py. Reading it.",
             strategy=ExecutionStrategy.TOOL_USE,
             tool_call=ToolCall(name="read_file", args={"file_path": str(env["repo_path"] / "server.py")})
-        ),
+        ).model_dump_json()),
         # Turn 3: Finish (FINISH)
-        PlanningResult(
+        AIMessage(content=PlanningResult(
             thought_process="Analyzed. It uses 'standard' logger.",
             strategy=ExecutionStrategy.FINISH
-        )
+        ).model_dump_json())
     ]
 
     # 3. Setup Mock Generator
@@ -166,7 +167,12 @@ async def test_v9_full_architectural_audit_flow(v9_env):
 
     # C. Check if worker result bubbled up (in history)
     # Orchestrator's collector_node adds a message like: "[System] Task {task_id} finished: ..."
-    # final_state["messages"] contains dicts since AgentState is defined that way
-    assert any("finished" in str(m.get("content", "")) for m in final_state["messages"])
+    # final_state["messages"] contains dicts and AIMessages
+    def get_content(m):
+        if isinstance(m, dict):
+            return m.get("content", "")
+        return getattr(m, "content", "")
+
+    assert any("finished" in get_content(m) for m in final_state["messages"])
     assert final_state.get("final_result") is not None
     assert final_state["quota"].agent_count == 1 
