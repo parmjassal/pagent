@@ -82,6 +82,17 @@ def build_dynamic_tree(session_id: str, user_id: str, model_name: str, task: Opt
             status_style = get_status_style(todo.get('status'))
             description = todo.get('description', 'No description').replace('[', '(').replace(']', ')')
 
+            # Enhance description for tool types with the first arg key-value pair
+            if todo.get('type') == 'tool':
+                args = todo.get('payload', {}).get('args', {})
+                if args:
+                    first_arg_key = next(iter(args), None)
+                    if first_arg_key:
+                        value = str(args[first_arg_key])
+                        # Truncate long values
+                        truncated_value = value[:40] + '...' if len(value) > 40 else value
+                        description = f"{description} ({first_arg_key}: {truncated_value})"
+
             assigned_agent_id = todo.get('assigned_to')
             if assigned_agent_id:
                 # This todo represents spawning a sub-agent
@@ -163,6 +174,14 @@ async def run_platform(
         finally:
             if not scheduler_task.done():
                 scheduler_task.cancel()
+            
+            # Print the final tree in a pager for review
+            console.print("\n[bold blue]Final Agent Tree (scrollable):[/bold blue]")
+            with console.pager():
+                final_tree = build_dynamic_tree(
+                    resolved_session_id, user_id, model_name, task, session_path
+                )
+                console.print(final_tree)
 
 @app.command()
 def serve(

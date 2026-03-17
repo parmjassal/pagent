@@ -53,6 +53,9 @@ def cli_test_env(tmp_path):
     (independent_todo_path / "task_x.json").write_text(
         '{"description": "Perform independent task", "status": "pending", "assigned_to": null}'
     )
+    (independent_todo_path / "task_y.json").write_text(
+        '{"description": "Invoke a specific tool", "status": "completed", "type": "tool", "payload": {"name": "my_tool", "args": {"input_file": "/path/to/data.txt", "mode": "read"}}, "assigned_to": null}'
+    )
 
     return {
         "user_id": user_id, 
@@ -98,6 +101,7 @@ def test_v11_build_dynamic_tree_filesystem_sync(cli_test_env):
     
     # 4. Assert tasks for 'independent_agent'
     assert "📝 Task: Perform independent task (pending)" in output
+    assert "📝 Task: Invoke a specific tool (input_file: /path/to/data.txt) (completed)" in output
     
     # 5. Assert tasks and delegations for 'super'
     # Assert for the simple name 'worker_1' instead of the full path 'super/worker_1'
