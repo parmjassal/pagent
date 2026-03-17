@@ -47,13 +47,19 @@ class TODOManager:
 
     def list_tasks(self, status: Optional[TaskStatus] = None) -> List[ScopedTask]:
         tasks = []
-        for path in self.root.glob("task_*.json"):
+        paths = sorted(
+            self.root.glob("task_*.json"),
+            key=lambda p: p.stat().st_ctime  # creation time (oldest first)
+        )
+
+        for path in paths:
             try:
                 task = ScopedTask.model_validate_json(path.read_text())
                 if status is None or task.status == status:
                     tasks.append(task)
             except Exception as e:
                 logger.error(f"Failed to load task {path}: {e}")
+
         return tasks
 
     def update_status(self, task_id: str, status: TaskStatus, result: Optional[Dict[str, Any]] = None):

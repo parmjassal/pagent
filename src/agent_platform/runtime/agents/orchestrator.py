@@ -34,7 +34,7 @@ def _normalize_messages(messages):
             role = m.get("role")
             content = m.get("content", "")
             if role == "system":
-                normalized.append(SystemMessage(content=content))
+                normalized.append(HumanMessage(content=content))
             elif role == "assistant":
                 normalized.append(AIMessage(content=content))
             elif role == "tool": # NEW: Handle dict-based tool messages
@@ -116,7 +116,7 @@ class OrchestratorAgent:
         ]
         
         try:
-            logger.debug(f"Invoking LLM")
+            logger.debug(f"Invoking LLM: {prompt_messages}")
             raw_response = await self.llm.ainvoke(prompt_messages)
             logger.debug(f"Planning Raw Response: {raw_response}")
 
@@ -203,7 +203,7 @@ class OrchestratorAgent:
             new_task_ids.append(tid)
 
         return {
-            "messages": [{"role": "assistant", "content": result.thought_process}],
+            "messages": [{"role": "assistant", "content": result.thought_process, "tool_calls":[]}],
             "metadata": metadata_update,
             "node_counts": {"plan": 1}
         }
@@ -222,6 +222,7 @@ class OrchestratorAgent:
         todo_mgr.update_status(task.task_id, TaskStatus.IN_PROGRESS)
         
         # Metadata setup
+        last_message = state["messages"][-1]
         meta_update = {"next_task": task.model_dump()}
         msg_update = []
         
@@ -249,6 +250,7 @@ class OrchestratorAgent:
                 "args": {"agent_id": task.assigned_to, "instructions": task.description},
                 "id": tool_call_id
             }
+
             msg_update.append(AIMessage(
                 content=f"Delegating to sub-agent {task.assigned_to} for task {task.task_id}...", 
                 tool_calls=[{
@@ -261,7 +263,7 @@ class OrchestratorAgent:
                 }]
             ))
             
-        return {"metadata": meta_update, "messages": msg_update}
+        return {"metadata": meta_update, "messages": msg_update }
 
     async def executor_node(self, state: AgentState) -> AgentState:
         """Dispatches to SpawningNode (AGENT type). TOOL type is handled by ToolNode."""
@@ -299,7 +301,7 @@ class OrchestratorAgent:
             agent_dir = self.agent_factory.workspace.get_agent_dir(state["user_id"], state["session_id"], sub_agent_id)
             child_state = {
                 **state, "agent_id": sub_agent_id, "role": next_role,
-                "messages": [{"role": "system", "content": prompt}],
+                "messages": [{"role": "user", "content": prompt}],
                 "inbox_path": agent_dir/"inbox", "outbox_path": agent_dir/"outbox", "todo_path": agent_dir/"todo",
                 "current_depth": state["current_depth"] + 1, "final_result": None, "next_steps": [], "node_counts": {}
             }
@@ -384,7 +386,7 @@ class OrchestratorAgent:
             })
         
         # Always add a system log message for clarity in the UI/logs
-        msg_update.append({"role": "user", "content": f"[System] Task {task_id} finished: {str(final_val)[:200]}..."})
+        #msg_update.append({"role": "user", "content": f"[System] Task {task_id} finished: {str(final_val)[:200]}..."})
         
         # Clean up transient metadata
         return {

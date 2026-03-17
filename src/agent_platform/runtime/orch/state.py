@@ -4,6 +4,9 @@ import operator
 from pathlib import Path
 from .quota import QuotaState, SessionQuota
 
+from langgraph.graph import add_messages
+from langchain_core.messages import BaseMessage
+
 class AgentRole(str, Enum):
     SUPERVISOR = "supervisor"
     WORKER = "worker"
@@ -46,7 +49,7 @@ class AgentState(TypedDict):
     current_depth: int
     generated_output: Optional[str]
     final_result: Optional[Dict[str, Any]] # New: Processed Result
-    messages: Annotated[List[Dict[str, Any]], operator.add]
+    messages: Annotated[List[BaseMessage], add_messages]
     next_steps: Annotated[List[str], update_next_steps]
     node_counts: Annotated[Dict[str, int], update_counts]
     active_interactions: Annotated[List[str], update_interactions]

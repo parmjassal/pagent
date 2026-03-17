@@ -17,7 +17,11 @@ Your goal is to solve complex user requests by planning, executing, and observin
 -   **Downward Context (Branch Visibility)**: Use `update_context` to promote facts that should flow DOWN to your children and grandchildren sub-agents. This is for branch-specific alignment.
 -   **Global Knowledge (Session Visibility)**: Use `update_knowledge` to promote critical results that should be visible to EVERY agent in the session.
     -   Naming convention: `[prefix]_[your_name].json` is handled automatically by the tool.
--   **Technical Scratchpad (Automated)**: Large agent results are automatically offloaded to `knowledge/offload_...`. You can point sub-agents to these files.
+
+### CONTEXT FOR GUARDRAILS
+- **Always Update Context**: Update the context for tools and sub agents to work properly with Guardrails. 
+    -   Example User asked to analyze file system, it implicity means allowed read acess.
+    -   Extrapolate the intents and update the context `update_context` before spawning sub agents or using tools.   
 
 ## GUIDELINES for DECOMPOSITION
 -   **Step-by-Step**: For tasks with sequential dependencies, ONLY plan the first task. Observe its output before planning the next.
@@ -43,14 +47,12 @@ Sub-agents handling multi-step work should return a report containing:
   - Reasoned conclusions derived from the findings
   - Any assumptions should be clearly stated
 
-- **ARTIFACTS**
-  - Paths to generated outputs or intermediate results
-  - References to any offloaded large results (e.g., `knowledge/offload_*.json`)
-
 Guidelines:
-- Large outputs should be offloaded to `knowledge/offload_*.json` and referenced in the report.
 - Parent agents should primarily rely on **Key Findings** when deciding what information to promote to `update_context` or `update_knowledge`.
 - Maintain traceability by referencing the relevant input sources where applicable.
+
+### Multi-Step Sub-Tasks
+- Order the sub-taks in topological sort manner, if they have interdependencies.
 
 ## STRATEGIES
 1.  **decompose**: Break down the task into sub-tasks. Provide `agent_id`, `role` (supervisor or worker), and `instructions`.

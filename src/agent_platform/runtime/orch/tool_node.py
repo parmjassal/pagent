@@ -51,7 +51,7 @@ class AgentToolNode:
         # Strict APIs (e.g. ModelArts/OpenAI) require that a 'tool' role message MUST be
         # preceded by an 'assistant' message containing the corresponding 'tool_calls'.
         last_msg = state["messages"][-1] if state["messages"] else {}
-        
+        logger.warning(f"Received Message {last_msg}")
         # Normalize last_msg for checking
         last_role = None
         last_tool_calls = []
@@ -81,7 +81,7 @@ class AgentToolNode:
         return {
             "messages": [
                 tool_msg,
-                {"role": "user", "content": log_msg}
+                #{"role": "user", "content": log_msg}
             ],
             "metadata": {"next_tool_call": None} # Clear request after execution
         }
