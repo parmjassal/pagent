@@ -2,11 +2,14 @@ import logging
 import json
 import secrets
 from typing import Dict, Any, List, Optional, Union
-from langchain_core.messages import SystemMessage, HumanMessage, BaseMessage, AIMessage
+from langchain_core.messages import SystemMessage, HumanMessage, BaseMessage, AIMessage, ToolMessage # NEW: ToolMessage
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_classic.output_parsers.retry import RetryWithErrorOutputParser
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.base import BaseCheckpointSaver
+
+#  FIX: correct import path
+from langchain_core.prompt_values import ChatPromptValue
 
 from ..orch.state import AgentState, AgentRole
 from ..orch.models import PlanningResult, ExecutionStrategy, SubAgentTask, ToolCall
@@ -20,6 +23,30 @@ from .generator import SystemGeneratorAgent, TaskType as GenTaskType
 from ..orch.result_hook import ResultHook
 
 logger = logging.getLogger(__name__)
+
+#  FIX: normalize dict → BaseMessage
+def _normalize_messages(messages):
+    normalized = []
+    for m in messages:
+        if isinstance(m, BaseMessage):
+            normalized.append(m)
+        elif isinstance(m, dict):
+            role = m.get("role")
+            content = m.get("content", "")
+            if role == "system":
+                normalized.append(SystemMessage(content=content))
+            elif role == "assistant":
+                normalized.append(AIMessage(content=content))
+            elif role == "tool": # NEW: Handle dict-based tool messages
+                # tool_call_id is essential for ToolMessage
+                tool_call_id = m.get("tool_call_id", secrets.token_hex(4)) 
+                normalized.append(ToolMessage(content=content, tool_call_id=tool_call_id))
+            else:
+                normalized.append(HumanMessage(content=content))
+        else:
+            normalized.append(HumanMessage(content=str(m)))
+    return normalized
+
 
 class OrchestratorAgent:
     """
@@ -47,23 +74,18 @@ class OrchestratorAgent:
         self.result_hook = result_hook
 
     async def planner_node(self, state: AgentState) -> AgentState:
-        """Thinker: Reviews history and writes a batch of tasks to the TODO list."""
         logger.info(f"Agent {state['agent_id']} entering planner_node.")
         
-        # Setup parser for PlanningResult
         pydantic_parser = PydanticOutputParser(pydantic_object=PlanningResult)
         
-        # Initialize RetryWithErrorOutputParser for robust parsing and retries
         retry_parser = RetryWithErrorOutputParser.from_llm(
             parser=pydantic_parser,
             llm=self.llm,
-            max_retries=3 # Allow up to 3 retries for robust parsing
+            max_retries=3
         )
 
-        # Resolve Template
         session_path = self.agent_factory.workspace.get_session_dir(state["user_id"], state["session_id"])
         
-        # Use role-specific template or default orchestrator
         template_name = "supervisor_decompose.txt" if state["role"] == AgentRole.SUPERVISOR else "worker_reasoning.txt"
         template_path = session_path / "prompts" / template_name
         
@@ -71,49 +93,83 @@ class OrchestratorAgent:
         if template_path.exists():
             system_instruction = template_path.read_text()
 
-        # The RetryWithErrorOutputParser will inject format instructions itself.
-        # So we explicitly *do not* add them here.
-
-        # Inject Tool Manifest
         if self.tool_manifest:
-            system_instruction = f"{system_instruction}\n\n## Available Tools:\n{self.tool_manifest}"
+            system_instruction = f"{system_instruction}
+
+## Available Tools:
+{self.tool_manifest}"
         
-        # Inject current TODO state for context
         todo_mgr = TODOManager(state["todo_path"].parent)
         all_tasks = todo_mgr.list_tasks()
         if all_tasks:
-            todo_summary = "\n".join([f"- [{t.status}] {t.task_id}: {t.title} ({t.type})" for t in all_tasks])
-            system_instruction = f"{system_instruction}\n\n## Current Work Order (TODO List):\n{todo_summary}\n"
+            todo_summary = "
+".join([f"- [{t.status}] {t.task_id}: {t.title} ({t.type})" for t in all_tasks])
+            system_instruction = f"{system_instruction}
 
+## Current Work Order (TODO List):
+{todo_summary}
+"
+
+        #  FIX: normalize messages
         prompt_messages = [
             SystemMessage(content=system_instruction),
-            *state["messages"]
+            *_normalize_messages(state["messages"])
         ]
         
         try:
-            # Generate the raw LLM response
+            logger.debug(f"Invoking LLM")
             raw_response = await self.llm.ainvoke(prompt_messages)
-            logger.debug(f"Planning Raw Response: {raw_response.content}")
+            logger.debug(f"Planning Raw Response: {raw_response}")
 
-            # Use the retry_parser to parse the response.
-            # It handles markdown fences, Pydantic validation, and retries with the LLM.
-            result: PlanningResult = await retry_parser.aparse_with_prompt(
-                raw_response.content,
-                prompt_messages # Pass the full prompt for context during retry
-            )
-            
+            # Normalize completion
+            if isinstance(raw_response, list):
+                completion = "
+".join(
+                    m.content if hasattr(m, "content") else str(m)
+                    for m in raw_response
+                )
+            else:
+                completion = getattr(raw_response, "content", str(raw_response))
+
+            # ---------------------------------------------------------
+            # ✅ FIRST: Fast robust JSON parse
+            # ---------------------------------------------------------
+            parsed_dict = robust_json_parser(completion)
+
+            if parsed_dict:
+                try:
+                    result: PlanningResult = PlanningResult.model_validate(parsed_dict)
+                    logger.debug(f"Parsed via robust_json_parser (fast path) {result}")
+                except Exception as e:
+                    logger.debug(f"Fast parse failed validation, falling back: {e}")
+                    result = None
+            else:
+                result = None
+
+            # ---------------------------------------------------------
+            # 🔁 FALLBACK: Retry parser ONLY if needed
+            # ---------------------------------------------------------
+            if result is None:
+                prompt_value = ChatPromptValue(messages=prompt_messages)
+
+                result: PlanningResult = await retry_parser.aparse_with_prompt(
+                    completion,
+                    prompt_value
+                )
+
+                logger.debug("Parsed via retry_parser (fallback)")
+
+            # ✅ common success path
             logger.info(f"Planner strategy: {result.strategy}")
+
         except Exception as e:
             logger.error(f"Planning failed after retries: {e}")
             return {"messages": [{"role": "user", "content": f"[System] Planning Error: {e}"}]}
 
-        # Handle Plan
         metadata_update = {"thought_process": result.thought_process, "strategy": result.strategy}
         
         if result.strategy == ExecutionStrategy.FINISH:
-            # Handle both PlanningResult's implied finish and potential future final_answer
             final_answer = result.thought_process or "Goal achieved."
-            # If the model used a WorkerResult-like structure (which we can allow via loose parsing)
             if hasattr(result, "final_answer") and result.final_answer:
                 final_answer = result.final_answer
             
@@ -125,7 +181,6 @@ class OrchestratorAgent:
                 "node_counts": {"plan": 1}
             }
 
-        # Convert PlanningResult into ScopedTasks in TODO
         todo_mgr = TODOManager(state["todo_path"].parent)
         new_task_ids = []
         
@@ -172,24 +227,41 @@ class OrchestratorAgent:
         meta_update = {"next_task": task.model_dump()}
         msg_update = []
         
+        tool_call_id = f"call_{secrets.token_hex(4)}" # Unified tool_call_id generation
+        
         if task.type == TaskType.TOOL:
             tool_call = task.payload
-            tool_call_id = f"call_{secrets.token_hex(4)}"
             meta_update["next_tool_call"] = {
                 "name": tool_call["name"],
                 "args": tool_call["args"],
                 "id": tool_call_id
             }
             # Inject assistant message for strict APIs
-            msg_update.append({
-                "role": "assistant", 
-                "content": f"Executing task {task.task_id}...",
-                "tool_calls": [{
+            msg_update.append(AIMessage(
+                content=f"Executing tool {tool_call['name']} for task {task.task_id}...",
+                tool_calls=[{
                     "id": tool_call_id,
                     "type": "function",
                     "function": {"name": tool_call["name"], "arguments": json.dumps(tool_call["args"])}
                 }]
-            })
+            ))
+        elif task.type == TaskType.AGENT: # Handle AGENT type as a tool_call
+            meta_update["next_tool_call"] = {
+                "name": "delegate_to_agent", # A generic tool name for delegation
+                "args": {"agent_id": task.assigned_to, "instructions": task.description},
+                "id": tool_call_id
+            }
+            msg_update.append(AIMessage(
+                content=f"Delegating to sub-agent {task.assigned_to} for task {task.task_id}...", 
+                tool_calls=[{
+                    "id": tool_call_id,
+                    "type": "function",
+                    "function": {"name": "delegate_to_agent", "arguments": json.dumps({
+                        "agent_id": task.assigned_to, 
+                        "instructions": task.description
+                    })}
+                }]
+            ))
             
         return {"metadata": meta_update, "messages": msg_update}
 
