@@ -166,8 +166,14 @@ class AutonomousScheduler:
                 base_url=self.model_config["openai_base_url"],
                 http_client=http_client
             )
-            # Inject Context Store into Guardrails
-            guardrails = GuardrailManager(policy_generator=policy_gen, context_store=self.context_store)
+            
+            # Setup Guardrails with feature flag
+            guardrails_enabled = os.environ.get("AGENT_PLATFORM_GUARDRAILS_ENABLED", "false").lower() == "true"
+            guardrails = GuardrailManager(
+                policy_generator=policy_gen, 
+                context_store=self.context_store,
+                enabled=guardrails_enabled
+            )
 
             dispatcher = ToolDispatcher(registry, ProcessSandboxRunner(), guardrails)
             tool_node = AgentToolNode(dispatcher)

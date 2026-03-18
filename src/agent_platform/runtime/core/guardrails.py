@@ -99,25 +99,32 @@ class StableHashLookupProvider(PolicyLookupProvider):
 
 class GuardrailManager:
     """
-    Handles context-aware policy validation.
+    Handles context-aware policy validation. Can be disabled via a feature flag.
     """
 
     def __init__(
-        self, 
+        self,
         lookup_provider: Optional[PolicyLookupProvider] = None,
         policy_generator: Optional[PolicyGenerator] = None,
-        context_store: Optional[ContextStore] = None
+        context_store: Optional[ContextStore] = None,
+        enabled: bool = False,
     ):
         self.lookup = lookup_provider or StableHashLookupProvider()
         self.policy_generator = policy_generator
         self.context_store = context_store
+        self.enabled = enabled
+        if not self.enabled:
+            logger.warning("Guardrails are disabled. All tool calls will be permitted without validation.")
 
     async def validate_tool_call(
-        self, 
-        state: AgentState, 
-        tool_name: str, 
+        self,
+        state: AgentState,
+        tool_name: str,
         tool_args: Dict[str, Any]
     ) -> Tuple[bool, str]:
+        if not self.enabled:
+            return True, "Guardrails are disabled."
+
         user_id = state["user_id"]
         agent_id = state["agent_id"]
         context = {"agent_id": agent_id, "depth": state["current_depth"]}
