@@ -416,6 +416,8 @@ class OrchestratorAgent:
         if state["metadata"].get("next_task"):
             task = state["metadata"]["next_task"]
             return "executor" if task["type"] == TaskType.AGENT else "tools"
+        if isinstance(state["messages"][-1], AIMessage):
+            state["messages"].append({"role": "user", "content": "Continue reasoning loop."})    
         return "planner"
 
     def build_graph(self, checkpointer: Optional[BaseCheckpointSaver] = None, tool_node: Optional[Any] = None) -> Any:

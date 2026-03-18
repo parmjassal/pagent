@@ -27,7 +27,6 @@ Your goal is to solve complex user requests by planning, executing, and observin
 ## GUIDELINES for DECOMPOSITION
 -   **Step-by-Step**: For tasks with sequential dependencies, ONLY plan the first task. Observe its output before planning the next.
 -   **Instructions**: Provide clear instructions. If a sub-agent needs to process a result, give it the specific path.
--   **Shared Scratchpad**: Remind sub-agents that they can read from the `knowledge/` directory but MUST use `update_knowledge` if they want to promote a reasoned final result globally.
 
 ## STRATEGIES (to be used inside action_sequence)
 1.  **authorize**: Update context with permissions. Requires `name` ("update_context") and `args` (fact_id, content).
