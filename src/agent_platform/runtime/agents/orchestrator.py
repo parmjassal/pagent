@@ -39,8 +39,8 @@ def _normalize_messages(messages):
                 normalized.append(AIMessage(content=content))
             elif role == "tool": # NEW: Handle dict-based tool messages
                 # tool_call_id is essential for ToolMessage
-                tool_call_id = m.get("tool_call_id", secrets.token_hex(4)) 
-                normalized.append(ToolMessage(content=content, tool_call_id=tool_call_id))
+                tid = m.get("tool_call_id") or secrets.token_hex(4)
+                normalized.append(ToolMessage(content=content, tool_call_id=tid))
             else:
                 normalized.append(HumanMessage(content=content))
         else:
