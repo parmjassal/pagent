@@ -116,50 +116,10 @@ class OrchestratorAgent:
         ]
         
         try:
-            logger.debug(f"Invoking LLM: {prompt_messages}")
-            raw_response = await self.llm.ainvoke(prompt_messages)
-            logger.debug(f"Planning Raw Response: {raw_response}")
-
-            # Normalize completion
-            if isinstance(raw_response, list):
-                completion = "\n".join(
-                    m.content if hasattr(m, "content") else str(m)
-                    for m in raw_response
-                )
-            else:
-                completion = getattr(raw_response, "content", str(raw_response))
-
-            # ---------------------------------------------------------
-            # ✅ FIRST: Fast robust JSON parse
-            # ---------------------------------------------------------
-            parsed_dict = robust_json_parser(completion)
-
-            if parsed_dict:
-                try:
-                    result: PlanningResult = PlanningResult.model_validate(parsed_dict)
-                    logger.debug(f"Parsed via robust_json_parser (fast path) {result}")
-                except Exception as e:
-                    logger.debug(f"Fast parse failed validation, falling back: {e}")
-                    result = None
-            else:
-                result = None
-
-            # ---------------------------------------------------------
-            # 🔁 FALLBACK: Retry parser ONLY if needed
-            # ---------------------------------------------------------
-            if result is None:
-                prompt_value = ChatPromptValue(messages=prompt_messages)
-
-                result: PlanningResult = await retry_parser.aparse_with_prompt(
-                    completion,
-                    prompt_value
-                )
-
-                logger.debug("Parsed via retry_parser (fallback)")
-
-            # ✅ common success path
-            logger.info(f"Planner turn complete with {len(result.action_sequence)} actions.")
-
+            planner_llm = self.llm.with_structured_output(PlanningResult)
+            logger.debug(F"Prompt to LLM is {prompt_messages}")
+            result: PlanningResult = await planner_llm.ainvoke(prompt_messages)
+            logger.debug(F"Result from LLM is {result}")
         except Exception as e:
             logger.error(f"Planning failed after retries: {e}")
             return {"messages": [{"role": "user", "content": f"[System] Planning Error: {e}"}]}
