@@ -7,17 +7,27 @@ logger = logging.getLogger(__name__)
 
 _async_client: Optional[httpx.AsyncClient] = None
 
-def on_response_hook(response: httpx.Response):
+async def on_response_hook(response: httpx.Response):
     """
-    Hook to detect 3xx redirects (common in corporate proxies/captive portals).
-    Outputs the redirect link to stdout for user visibility.
+    Async hook to detect redirects and provide low-level debug logging.
     """
+    logger.debug(f"HTTP Response: {response.status_code} {response.url}")
+    
+    # We only read and log the body if DEBUG is enabled to avoid performance overhead
+    if logger.isEnabledFor(logging.DEBUG):
+        try:
+            await response.aread()
+            logger.debug(f"HTTP Headers: {dict(response.headers)}")
+            logger.debug(f"HTTP Body (first 500 chars): {response.text[:500]}...")
+        except Exception as e:
+            logger.debug(f"Could not read response body for debug: {e}")
+
     if response.is_redirect:
         redirect_url = response.headers.get("Location")
-        msg = f"
-[PROXY DETECTED] Request redirected to: {redirect_url}"
+        msg = f"\n[PROXY DETECTED] Request redirected to: {redirect_url}"
         print(msg, file=sys.stderr)
         logger.warning(f"HTTP Redirect detected: {redirect_url}")
+
 
 def get_platform_async_http_client() -> httpx.AsyncClient:
     """
