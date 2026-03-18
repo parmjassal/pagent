@@ -192,11 +192,15 @@ class OrchestratorAgent:
                         new_task_ids.append(tid)
 
             elif action.strategy in (ExecutionStrategy.TOOL_USE, ExecutionStrategy.AUTHORIZE):
+                tool_args = action.args or {}
+                if action.strategy == ExecutionStrategy.AUTHORIZE and 'content' in tool_args and not isinstance(tool_args['content'], str):
+                    tool_args['content'] = json.dumps(tool_args['content'])
+
                 tid = todo_mgr.add_task(ScopedTask(
                     title=f"{action.strategy.capitalize()}: {action.name}",
                     description=f"Invoke {action.name}",
                     type=TaskType.TOOL,
-                    payload={"name": action.name, "args": action.args or {}}
+                    payload={"name": action.name, "args": tool_args}
                 ))
                 new_task_ids.append(tid)
 
