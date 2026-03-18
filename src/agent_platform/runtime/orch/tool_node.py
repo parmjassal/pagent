@@ -23,7 +23,7 @@ class AgentToolNode:
         # 1. Resolve tool request from metadata
         tool_call = state.get("metadata", {}).get("next_tool_call")
         if not tool_call:
-            return {"messages": [{"role": "user", "content": "[System] ToolNode: No tool call requested."}]}
+            return {"messages": [{"role": "tool", "content": "[System] ToolNode: No tool call requested."}]}
 
         tool_name = tool_call.get("name")
         tool_args = tool_call.get("args", {})
@@ -32,7 +32,7 @@ class AgentToolNode:
         tool_call_id = tool_call.get("id")
         
         if not tool_name:
-            return {"messages": [{"role": "user", "content": "[System] ToolNode: Missing tool name."}]}
+            return {"messages": [{"role": "tool", "content": "[System] ToolNode: Missing tool name."}]}
 
         # 2. Dispatch Execution (Native or Sandboxed)
         logger.info(f"Agent {state['agent_id']} calling tool: {tool_name} (ID: {tool_call_id or 'none'})")
@@ -76,7 +76,7 @@ class AgentToolNode:
             if tool_call_id:
                 logger.warning(f"Tool call ID {tool_call_id} provided, but preceding assistant message missing tool_calls metadata. Falling back to 'user' role for result.")
             # Present as a system observation to the agent
-            tool_msg = {"role": "user", "content": f"[Tool Result: {tool_name}]\n{content}"}
+            tool_msg = {"role": "tool", "content": f"[Tool Result: {tool_name}]\n{content}"}
 
         return {
             "messages": [

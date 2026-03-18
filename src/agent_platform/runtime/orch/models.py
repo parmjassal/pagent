@@ -4,6 +4,7 @@ from enum import Enum
 from .state import AgentRole
 
 class ExecutionStrategy(str, Enum):
+    AUTHORIZE = "authorize"
     DECOMPOSE = "decompose"
     TOOL_USE = "tool_use"
     FINISH = "finish"
@@ -13,23 +14,20 @@ class SubAgentTask(BaseModel):
     role: AgentRole = Field(description="Role of the agent: supervisor or worker")
     instructions: str = Field(description="Specific instructions for this agent")
 
-class ToolCall(BaseModel):
-    id: Optional[str] = Field(default=None, description="The unique ID of the tool call from the LLM")
-    name: str = Field(description="Name of the tool to invoke")
-    args: Dict[str, Any] = Field(default_factory=dict, description="Arguments for the tool")
+class Action(BaseModel):
+    strategy: ExecutionStrategy = Field(description="The chosen path: authorize, decompose, tool_use, or finish")
+    name: Optional[str] = Field(default=None, description="Tool name (required for authorize/tool_use)")
+    args: Optional[Dict[str, Any]] = Field(default=None, description="Tool arguments")
+    sub_tasks: Optional[List[SubAgentTask]] = Field(default=None, description="List of sub-tasks (required for decompose)")
+    final_answer: Optional[str] = Field(default=None, description="The final result (required for finish)")
 
 class PlanningResult(BaseModel):
-    thought_process: str = Field(description="The supervisor's reasoning for the chosen strategy")
-    strategy: ExecutionStrategy = Field(description="The chosen path: decompose, tool_use, or finish")
-    sub_tasks: Optional[List[SubAgentTask]] = Field(default=None, description="Required if strategy is 'decompose'")
-    tool_call: Optional[ToolCall] = Field(default=None, description="Required if strategy is 'tool_use'")
-    final_answer: Optional[str] = Field(default=None, description="Optional: The final answer if strategy is 'finish'")
+    thought_process: str = Field(description="The reasoning for the chosen strategy/action sequence")
+    action_sequence: List[Action] = Field(default_factory=list, description="Sequence of actions to execute")
 
 class WorkerResult(BaseModel):
     thought_process: str = Field(description="The worker's reasoning")
-    strategy: ExecutionStrategy = Field(description="Either 'tool_use' or 'finish'")
-    tool_call: Optional[ToolCall] = Field(default=None, description="Required if strategy is 'tool_use'")
-    final_answer: Optional[str] = Field(default=None, description="The final answer if strategy is 'finish'")
+    action_sequence: List[Action] = Field(default_factory=list, description="Sequence of actions to execute")
 
 class DecompositionResult(BaseModel):
     thought_process: str = Field(description="The supervisor's reasoning")

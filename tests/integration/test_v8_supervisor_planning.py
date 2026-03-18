@@ -6,7 +6,7 @@ from agent_platform.runtime.core.resource_manager import SimpleCopyResourceManag
 from agent_platform.runtime.core.agent_factory import AgentFactory
 from agent_platform.runtime.orch.state import create_initial_state, AgentRole
 from agent_platform.runtime.agents.orchestrator import OrchestratorAgent
-from agent_platform.runtime.orch.models import PlanningResult, ExecutionStrategy, SubAgentTask, ToolCall
+from agent_platform.runtime.orch.models import PlanningResult, ExecutionStrategy, SubAgentTask, Action
 from agent_platform.runtime.core.mailbox import Mailbox, FilesystemMailboxProvider
 from agent_platform.runtime.core.todo import TODOManager, TaskType
 
@@ -43,8 +43,11 @@ async def test_supervisor_planning_decompose(plan_env):
     # 1. Mock DECOMPOSE strategy
     result_obj = PlanningResult(
         thought_process="Complex task, need help.",
-        strategy=ExecutionStrategy.DECOMPOSE,
-        sub_tasks=[SubAgentTask(agent_id="new_helper", role=AgentRole.WORKER, instructions="Task")]
+        action_sequence=[
+            Action(strategy=ExecutionStrategy.DECOMPOSE, sub_tasks=[
+                SubAgentTask(agent_id="new_helper", role=AgentRole.WORKER, instructions="Task")
+            ])
+        ]
     )
     # The initial call to self.llm.ainvoke in planner_node expects an object with a .content attribute.
     plan_env["mock_llm"].ainvoke.return_value = AIMessage(content=result_obj.model_dump_json())
@@ -56,8 +59,6 @@ async def test_supervisor_planning_decompose(plan_env):
     
     # 2. Run Planning Node
     res = await sup.planner_node(state)
-    
-    assert res["metadata"]["strategy"] == ExecutionStrategy.DECOMPOSE
     
     # Verify task was added to TODO
     todo_mgr = TODOManager(todo.parent)
@@ -72,8 +73,9 @@ async def test_supervisor_planning_tool_use(plan_env):
     # 1. Mock TOOL_USE strategy
     result_obj = PlanningResult(
         thought_process="Simple task, I'll do it myself.",
-        strategy=ExecutionStrategy.TOOL_USE,
-        tool_call=ToolCall(name="ls", args={"path": "."})
+        action_sequence=[
+            Action(strategy=ExecutionStrategy.TOOL_USE, name="ls", args={"path": "."})
+        ]
     )
     # The initial call to self.llm.ainvoke in planner_node expects an object with a .content attribute.
     plan_env["mock_llm"].ainvoke.return_value = AIMessage(content=result_obj.model_dump_json())
@@ -85,8 +87,6 @@ async def test_supervisor_planning_tool_use(plan_env):
     
     # 2. Run Planning Node
     res = await sup.planner_node(state)
-    
-    assert res["metadata"]["strategy"] == ExecutionStrategy.TOOL_USE
     
     # Verify tool task was added to TODO
     todo_mgr = TODOManager(todo.parent)

@@ -12,7 +12,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langchain_core.prompt_values import ChatPromptValue
 
 from ..orch.state import AgentState, AgentRole
-from ..orch.models import PlanningResult, ExecutionStrategy, SubAgentTask, ToolCall
+from ..orch.models import PlanningResult, ExecutionStrategy, SubAgentTask, Action
 from ..orch.quota import SessionQuota, update_quota
 from ..core.agent_factory import AgentFactory
 from ..core.mailbox import Mailbox
@@ -158,49 +158,47 @@ class OrchestratorAgent:
                 logger.debug("Parsed via retry_parser (fallback)")
 
             # ✅ common success path
-            logger.info(f"Planner strategy: {result.strategy}")
+            logger.info(f"Planner turn complete with {len(result.action_sequence)} actions.")
 
         except Exception as e:
             logger.error(f"Planning failed after retries: {e}")
             return {"messages": [{"role": "user", "content": f"[System] Planning Error: {e}"}]}
 
-        metadata_update = {"thought_process": result.thought_process, "strategy": result.strategy}
+        metadata_update = {"thought_process": result.thought_process}
         
-        if result.strategy == ExecutionStrategy.FINISH:
-            final_answer = result.thought_process or "Goal achieved."
-            if hasattr(result, "final_answer") and result.final_answer:
-                final_answer = result.final_answer
-            
-            processed = self.result_hook.process_result(state["agent_id"], final_answer) if self.result_hook else {"type": "inline", "content": final_answer}
-            return {
-                "messages": [{"role": "assistant", "content": result.thought_process}],
-                "final_result": processed,
-                "metadata": metadata_update,
-                "node_counts": {"plan": 1}
-            }
-
         todo_mgr = TODOManager(state["todo_path"].parent)
         new_task_ids = []
         
-        if result.strategy == ExecutionStrategy.DECOMPOSE and result.sub_tasks:
-            for st in result.sub_tasks:
+        for action in result.action_sequence:
+            if action.strategy == ExecutionStrategy.FINISH:
                 tid = todo_mgr.add_task(ScopedTask(
-                    title=f"Sub-agent: {st.agent_id}",
-                    description=st.instructions,
-                    type=TaskType.AGENT,
-                    assigned_to=st.agent_id,
-                    metadata={"role": st.role}
+                    title="Finish",
+                    description=action.final_answer or "Goal achieved.",
+                    type=TaskType.FINISH,
+                    payload={"final_answer": action.final_answer}
                 ))
                 new_task_ids.append(tid)
-        
-        elif result.strategy == ExecutionStrategy.TOOL_USE and result.tool_call:
-            tid = todo_mgr.add_task(ScopedTask(
-                title=f"Tool: {result.tool_call.name}",
-                description=f"Invoke {result.tool_call.name}",
-                type=TaskType.TOOL,
-                payload={"name": result.tool_call.name, "args": result.tool_call.args}
-            ))
-            new_task_ids.append(tid)
+            
+            elif action.strategy == ExecutionStrategy.DECOMPOSE:
+                if action.sub_tasks:
+                    for st in action.sub_tasks:
+                        tid = todo_mgr.add_task(ScopedTask(
+                            title=f"Sub-agent: {st.agent_id}",
+                            description=st.instructions,
+                            type=TaskType.AGENT,
+                            assigned_to=st.agent_id,
+                            metadata={"role": st.role}
+                        ))
+                        new_task_ids.append(tid)
+
+            elif action.strategy in (ExecutionStrategy.TOOL_USE, ExecutionStrategy.AUTHORIZE):
+                tid = todo_mgr.add_task(ScopedTask(
+                    title=f"{action.strategy.capitalize()}: {action.name}",
+                    description=f"Invoke {action.name}",
+                    type=TaskType.TOOL,
+                    payload={"name": action.name, "args": action.args or {}}
+                ))
+                new_task_ids.append(tid)
 
         return {
             "messages": [{"role": "assistant", "content": result.thought_process, "tool_calls":[]}],
@@ -218,11 +216,21 @@ class OrchestratorAgent:
         
         # Sequential: Pick the first one
         task = pending[0]
+        
+        if task.type == TaskType.FINISH:
+             # Mark as COMPLETED immediately as there is no executor for it
+             todo_mgr.update_status(task.task_id, TaskStatus.COMPLETED)
+             final_answer = task.payload.get("final_answer", "Goal achieved.")
+             processed = self.result_hook.process_result(state["agent_id"], final_answer) if self.result_hook else {"type": "inline", "content": final_answer}
+             return {
+                 "final_result": processed,
+                 "metadata": {"next_task": None}
+             }
+
         # Mark as IN_PROGRESS
         todo_mgr.update_status(task.task_id, TaskStatus.IN_PROGRESS)
         
         # Metadata setup
-        last_message = state["messages"][-1]
         meta_update = {"next_task": task.model_dump()}
         msg_update = []
         
@@ -361,6 +369,12 @@ class OrchestratorAgent:
         final_val = error if error else result
         
         todo_mgr.update_status(task_id, status, result={"output": final_val})
+
+        # If failure, clear remaining pending tasks for this batch to force re-planning
+        if status == TaskStatus.FAILED:
+            pending = todo_mgr.list_tasks(status=TaskStatus.PENDING)
+            for p_task in pending:
+                todo_mgr.update_status(p_task.task_id, TaskStatus.FAILED, result={"output": "Aborted due to previous failure."})
         
         # Determine if we need to add a message to the state
         msg_update = []

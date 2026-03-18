@@ -17,6 +17,7 @@ class TaskStatus(str, Enum):
 class TaskType(str, Enum):
     TOOL = "tool"
     AGENT = "agent"
+    FINISH = "finish"
 
 class ScopedTask(BaseModel):
     task_id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
