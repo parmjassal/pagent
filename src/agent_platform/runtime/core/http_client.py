@@ -1,9 +1,11 @@
 import httpx
 import logging
 import sys
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
+
+_async_client: Optional[httpx.AsyncClient] = None
 
 def on_response_hook(response: httpx.Response):
     """
@@ -12,16 +14,39 @@ def on_response_hook(response: httpx.Response):
     """
     if response.is_redirect:
         redirect_url = response.headers.get("Location")
-        msg = f"\n[PROXY DETECTED] Request redirected to: {redirect_url}"
+        msg = f"
+[PROXY DETECTED] Request redirected to: {redirect_url}"
         print(msg, file=sys.stderr)
         logger.warning(f"HTTP Redirect detected: {redirect_url}")
 
-def get_platform_http_client() -> httpx.Client:
+def get_platform_async_http_client() -> httpx.AsyncClient:
     """
-    Returns an httpx Client configured for the platform.
+    Returns a shared, async httpx Client configured for the platform.
     Disables automatic redirect following to capture and report them.
     """
+    global _async_client
+    if _async_client is None or _async_client.is_closed:
+        logger.info("Creating new shared httpx.AsyncClient.")
+        _async_client = httpx.AsyncClient(
+            follow_redirects=False, # We want to catch and report redirects
+            event_hooks={'response': [on_response_hook]}
+        )
+    return _async_client
+
+async def close_platform_async_http_client():
+    """Closes the shared async http client."""
+    global _async_client
+    if _async_client and not _async_client.is_closed:
+        logger.info("Closing shared httpx.AsyncClient.")
+        await _async_client.aclose()
+        _async_client = None
+
+# Keep the synchronous version for any parts of the codebase that may still need it.
+def get_platform_http_client() -> httpx.Client:
+    """
+    Returns a synchronous httpx Client configured for the platform.
+    """
     return httpx.Client(
-        follow_redirects=False, # We want to catch and report redirects
+        follow_redirects=False,
         event_hooks={'response': [on_response_hook]}
     )

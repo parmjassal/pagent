@@ -42,12 +42,12 @@ class PolicyGenerator(ABC):
 
 class LLMPolicyGenerator(PolicyGenerator):
     """LLM-based policy generator."""
-    def __init__(self, model_name: str = "gpt-4o", base_url: Optional[str] = None):
-        http_client = get_platform_http_client()
+    def __init__(self, model_name: str = "gpt-4o", base_url: Optional[str] = None, http_client: Optional[Any] = None):
+        client = http_client or get_platform_http_client()
         self.llm = ChatOpenAI(
             model=model_name,
             openai_api_base=base_url,
-            http_client=http_client,
+            http_async_client=client,
             temperature=0
         )
         self.parser = JsonOutputParser(pydantic_object=PolicyDecision)

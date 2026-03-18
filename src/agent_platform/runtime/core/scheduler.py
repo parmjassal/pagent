@@ -25,7 +25,7 @@ from ..core.context_store import FilesystemContextStore
 from ..storage.context_tool import ContextTools
 from ..storage.todo_tool import TODOTool
 from ..orch.result_hook import OffloadingResultHook
-from ..core.http_client import get_platform_http_client
+from ..core.http_client import get_platform_async_http_client
 
 logger = logging.getLogger(__name__)
 
@@ -66,12 +66,16 @@ class AutonomousScheduler:
     async def run_forever(self):
         """Main loop of the scheduler."""
         logger.info(f"Scheduler started for session {self.session_id}")
-        while True:
-            try:
-                await self.tick()
-            except Exception as e:
-                logger.error(f"Scheduler tick error: {e}", exc_info=True)
-            await asyncio.sleep(2)
+        try:
+            while True:
+                try:
+                    await self.tick()
+                except Exception as e:
+                    logger.error(f"Scheduler tick error: {e}", exc_info=True)
+                await asyncio.sleep(2)
+        finally:
+            from .http_client import close_platform_async_http_client
+            await close_platform_async_http_client()
 
     async def tick(self):
         """Recursively discovers and processes agents."""
@@ -156,9 +160,11 @@ class AutonomousScheduler:
                 logger.warning(f"Failed to load some community tools: {e}")
 
             # Initialize Guardrails with LLM Policy Generator
+            http_client = get_platform_async_http_client()
             policy_gen = LLMPolicyGenerator(
                 model_name=self.model_config["model_name"],
-                base_url=self.model_config["openai_base_url"]
+                base_url=self.model_config["openai_base_url"],
+                http_client=http_client
             )
             # Inject Context Store into Guardrails
             guardrails = GuardrailManager(policy_generator=policy_gen, context_store=self.context_store)
@@ -185,11 +191,10 @@ class AutonomousScheduler:
             role = inbox_msg.get("role", AgentRole.SUPERVISOR)
 
             # Initialize LLM
-            http_client = get_platform_http_client()
             llm = ChatOpenAI(
                 model=self.model_config["model_name"],
                 openai_api_base=self.model_config["openai_base_url"],
-                http_client=http_client,
+                http_async_client=http_client,
                 temperature=0,
                 max_tokens=10000,
                 model_kwargs={
