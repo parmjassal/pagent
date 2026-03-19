@@ -120,6 +120,7 @@ class AutonomousScheduler:
             context_tools = ContextTools(self.context_store, knowledge_path=knowledge_path)
             registry.register_native("update_context", context_tools.update_context, source=ToolSource.CORE)
             registry.register_native("list_context", context_tools.list_context, source=ToolSource.CORE)
+            registry.register_native("fetch_context", context_tools.fetch_context, source=ToolSource.CORE)
             registry.register_native("update_knowledge", context_tools.update_knowledge, source=ToolSource.CORE)
             registry.register_native("list_knowledge", context_tools.list_knowledge, source=ToolSource.CORE)
             registry.register_native("fetch_knowledge", context_tools.fetch_knowledge, source=ToolSource.CORE)

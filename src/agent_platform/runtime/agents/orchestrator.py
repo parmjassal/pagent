@@ -133,7 +133,7 @@ class OrchestratorAgent:
             if action.strategy == ExecutionStrategy.FINISH:
                 tid = todo_mgr.add_task(ScopedTask(
                     title="Finish",
-                    description=action.final_answer or "Goal achieved.",
+                    description="Goal achieved.",
                     type=TaskType.FINISH,
                     payload={"final_answer": action.final_answer}
                 ))
@@ -153,8 +153,12 @@ class OrchestratorAgent:
 
             elif action.strategy in (ExecutionStrategy.TOOL_USE, ExecutionStrategy.AUTHORIZE):
                 tool_args = action.args or {}
-                if action.strategy == ExecutionStrategy.AUTHORIZE and 'content' in tool_args and not isinstance(tool_args['content'], str):
-                    tool_args['content'] = json.dumps(tool_args['content'])
+                if action.strategy == ExecutionStrategy.AUTHORIZE:
+                    tool_args = {}
+                    tool_args['content'] = f"Authorize {action.name} -> {action.args}"
+                    import time
+                    tool_args['fact_id'] = f"authorize_{action.name}_{int(time.time())}"
+                    action.name = 'update_context'
 
                 tid = todo_mgr.add_task(ScopedTask(
                     title=f"{action.strategy.capitalize()}: {action.name}",

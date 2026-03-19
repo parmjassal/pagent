@@ -19,7 +19,7 @@ class Action(BaseModel):
     name: Optional[str] = Field(default=None, description="Tool name (required for authorize/tool_use)")
     args: Optional[Dict[str, Any]] = Field(default=None, description="Tool arguments")
     sub_tasks: Optional[List[SubAgentTask]] = Field(default=None, description="List of sub-tasks (required for decompose)")
-    final_answer: Optional[str] = Field(default=None, description="The final result (required for finish)")
+    final_answer: Optional[Union[str, Dict[str, Any]]] = Field(default=None, description="The final result (required for finish)")
 
 class PlanningResult(BaseModel):
     thought_process: str = Field(description="The reasoning for the chosen strategy/action sequence")

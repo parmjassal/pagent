@@ -1,9 +1,12 @@
 import secrets
 import json
+import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from ..core.context_store import ContextStore
 from ..orch.state import AgentState
+
+logger = logging.getLogger(__name__)
 
 class ContextTools:
     """
@@ -19,7 +22,7 @@ class ContextTools:
         """Lists all fact IDs visible to the current agent in the branch hierarchy."""
         return self.store.list_facts(state["agent_id"])
 
-    def read_context(self, state: AgentState, fact_id: str) -> Optional[str]:
+    def fetch_context(self, state: AgentState, fact_id: str) -> Optional[str]:
         """Reads a specific fact from the branch hierarchy."""
         return self.store.read_fact(state["agent_id"], fact_id)
 
@@ -78,20 +81,46 @@ class ContextTools:
 
 
     def fetch_knowledge(self, state: AgentState, name: str) -> Optional[str]:
-        """
-        Fetches the contents of a specific Global Knowledge file.
-        The name should match a file returned by list_knowledge.
-        """
         if not self.knowledge_path:
             return None
 
-        target_path = self.knowledge_path / name
-        if not target_path.exists():
-            return None
-
         try:
-            return target_path.read_text()
-        except Exception:
+            # 1. Absolute path debugging
+            abs_path = self.knowledge_path.resolve()
+            logger.info(f"[DEBUG] Searching in directory: {abs_path}")
+            
+            if not abs_path.exists():
+                logger.error(f"[DEBUG] Path does not exist: {abs_path}")
+                return None
+
+            # 2. Case-insensitive search & flexible extension matching
+            # We lowercase everything to ensure a match
+            search_pattern = name.lower()
+            matches = [
+                p for p in abs_path.iterdir() 
+                if p.is_file() and search_pattern in p.name.lower()
+            ]
+
+            logger.info(f"[DEBUG] Searching for: {name}")
+            logger.info(f"[DEBUG] Found: {[p.name for p in matches]}")
+
+            if not matches:
+                return None
+
+            combined = []
+            for path in matches:
+                try:
+                    # Specify encoding to avoid Mac/Windows mismatches
+                    text = path.read_text(encoding="utf-8")
+                    combined.append(f"{path.name}\n\t{text}\n")
+                except Exception as e:
+                    logger.warning(f"Could not read {path.name}: {e}")
+                    continue
+
+            return "".join(combined) if combined else None
+
+        except Exception as e:
+            logger.error(f"Error in fetch_knowledge: {e}")
             return None
 
     def search_context(self, state: AgentState, query: str) -> str:
@@ -109,3 +138,4 @@ class ContextTools:
         if not results:
             return "No matching context found."
         return "\n\n".join(results)
+
