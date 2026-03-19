@@ -76,7 +76,7 @@ class AgentToolNode:
             if tool_call_id:
                 logger.warning(f"Tool call ID {tool_call_id} provided, but preceding assistant message missing tool_calls metadata. Falling back to 'user' role for result.")
             # Present as a system observation to the agent using 'user' role
-            tool_msg = {"role": "user", "content": f"[Tool Result: {tool_name}]\n{content}"}
+            tool_msg = {"role": "tool", "name": tool_name, "content": content, "tool_call_id": tool_call_id}
 
         return {
             "messages": [

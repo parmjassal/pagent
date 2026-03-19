@@ -163,9 +163,11 @@ class OrchestratorAgent:
                     payload={"name": action.name, "args": tool_args}
                 ))
                 new_task_ids.append(tid)
-
+        message_updates = []
+        message_updates.append({"role": "assistant", "content": result.thought_process, "tool_calls":[]})
+        message_updates.append({"role": "user", "content": "Lets run tools."})
         return {
-            "messages": [{"role": "assistant", "content": result.thought_process, "tool_calls":[]}],
+            "messages": message_updates,
             "metadata": metadata_update,
             "node_counts": {"plan": 1}
         }
