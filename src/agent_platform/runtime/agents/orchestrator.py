@@ -116,7 +116,9 @@ class OrchestratorAgent:
         ]
         
         try:
-            planner_llm = self.llm.with_structured_output(PlanningResult)
+            #logger.debug(f"[Debug] raw response {await self.llm.ainvoke(prompt_messages)}")
+
+            planner_llm = self.llm.with_structured_output(PlanningResult, method="json_mode")
             logger.debug(F"Prompt to LLM is {prompt_messages}")
             result: PlanningResult = await planner_llm.ainvoke(prompt_messages)
             logger.debug(F"Result from LLM is {result}")

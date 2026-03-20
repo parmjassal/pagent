@@ -38,7 +38,6 @@ def get_platform_async_http_client() -> httpx.AsyncClient:
     if _async_client is None or _async_client.is_closed:
         logger.info("Creating new shared httpx.AsyncClient.")
         _async_client = httpx.AsyncClient(
-            follow_redirects=False, # We want to catch and report redirects
             event_hooks={'response': [on_response_hook]}
         )
     return _async_client
