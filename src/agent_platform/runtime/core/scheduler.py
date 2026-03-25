@@ -147,16 +147,20 @@ class AutonomousScheduler:
             
             # 3. LangChain Community Tools (Priority 3: Heavy Execution)
             try:
-                from langchain_community.tools import ShellTool, YouTubeSearchTool
                 from langchain_community.tools.ddg_search.tool import DuckDuckGoSearchRun
                 from langchain_community.tools.wikipedia.tool import WikipediaQueryRun
                 from langchain_community.utilities import WikipediaAPIWrapper
+                from langchain_tavily import TavilySearch
+
+                #from langchain_experimental.tools import BashProcess
                 
                 # shell_exec
-                registry.register_langchain_tool(ShellTool())
+                #registry.register_langchain_tool(ShellTool())
                 
                 # web_search
-                registry.register_langchain_tool(DuckDuckGoSearchRun())
+                registry.register_langchain_tool(TavilySearch())
+
+                #registry.register_langchain_tool(BashProcess())
                 
                 # wikipedia
                 api_wrapper = WikipediaAPIWrapper(top_k_results=1, doc_content_chars_max=1000)

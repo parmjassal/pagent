@@ -14,3 +14,7 @@ scipy
 langgraph-checkpoint-sqlite
 aiosqlite
 langchain-community
+langchain-experimental
+ddgs
+wikipedia
+python-ripgrep>=0.0.2

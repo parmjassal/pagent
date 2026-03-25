@@ -19,9 +19,12 @@ dependencies = [
     "scipy",
     "langgraph-checkpoint-sqlite",
     "aiosqlite",
-    "langchain-community"
-    "langchain-experimental"
-    "python-ripgrep>=0.0.2"
+    "langchain-community",
+    "langchain-experimental",
+    "ddgs",
+    "wikipedia",
+    "python-ripgrep>=0.0.2",
+    "google-search-results"
 ]
 
 [tool.ruff]

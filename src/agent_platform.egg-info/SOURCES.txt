@@ -44,8 +44,11 @@ src/agent_platform/runtime/storage/__init__.py
 src/agent_platform/runtime/storage/context_tool.py
 src/agent_platform/runtime/storage/knowledge.py
 src/agent_platform/runtime/storage/search_tool.py
+src/agent_platform/runtime/storage/search_tool_v2.py
 src/agent_platform/runtime/storage/semantic_search.py
+src/agent_platform/runtime/storage/semantic_search_v2.py
 src/agent_platform/runtime/storage/todo_tool.py
+tests/test_action_sequence.py
 tests/test_agent_factory.py
 tests/test_context_refinement.py
 tests/test_guardrails.py

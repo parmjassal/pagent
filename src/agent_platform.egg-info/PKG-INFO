@@ -19,3 +19,7 @@ Requires-Dist: scipy
 Requires-Dist: langgraph-checkpoint-sqlite
 Requires-Dist: aiosqlite
 Requires-Dist: langchain-community
+Requires-Dist: langchain-experimental
+Requires-Dist: ddgs
+Requires-Dist: wikipedia
+Requires-Dist: python-ripgrep>=0.0.2
