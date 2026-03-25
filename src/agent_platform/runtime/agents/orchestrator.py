@@ -1,6 +1,7 @@
 import logging
 import json
 import secrets
+import asyncio
 from typing import Dict, Any, List, Optional, Union
 from langchain_core.messages import SystemMessage, HumanMessage, BaseMessage, AIMessage, ToolMessage # NEW: ToolMessage
 from langchain_core.output_parsers import PydanticOutputParser
@@ -72,10 +73,16 @@ class OrchestratorAgent:
         self.unit_compiler = unit_compiler
         self.tool_manifest = tool_manifest
         self.result_hook = result_hook
+        import time
+        self.last_request = time.time()
 
     async def planner_node(self, state: AgentState) -> AgentState:
         logger.info(f"Agent {state['agent_id']} entering planner_node.")
-        
+        import time
+        delta = time.time() - self.last_request
+        if delta < 3:
+           await asyncio.sleep(3 - delta)
+
         pydantic_parser = PydanticOutputParser(pydantic_object=PlanningResult)
         
         retry_parser = RetryWithErrorOutputParser.from_llm(
@@ -169,6 +176,8 @@ class OrchestratorAgent:
                     payload={"name": action.name, "args": tool_args}
                 ))
                 new_task_ids.append(tid)
+        import time
+        self.last_request = time.time()
         message_updates = []
         message_updates.append({"role": "assistant", "content": result.thought_process, "tool_calls":[]})
         message_updates.append({"role": "user", "content": "Lets run tools."})

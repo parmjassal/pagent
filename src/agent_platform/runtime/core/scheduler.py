@@ -24,6 +24,7 @@ from ..core.tools.filesystem import FilesystemTools
 from ..core.context_store import FilesystemContextStore
 from ..storage.context_tool import ContextTools
 from ..storage.todo_tool import TODOTool
+from ..storage.search_tool_v2 import SearchTools
 from ..orch.result_hook import OffloadingResultHook
 from ..core.http_client import get_platform_async_http_client
 
@@ -90,6 +91,8 @@ class AutonomousScheduler:
                 await self._process_agent(agent_id)
 
     async def _process_agent(self, agent_id: str):
+        repo_env = os.environ.get("REPO_PATH")
+        base_repo_path = Path(repo_env) if repo_env else self.session_path
         inbox_msg = self.mailbox.receive(agent_id)
         if not inbox_msg:
             return
@@ -127,11 +130,20 @@ class AutonomousScheduler:
 
 
             # 2. Filesystem & Discovery Tools (Priority 2)
-            fs_tools = FilesystemTools(self.session_path)
+            fs_tools = FilesystemTools(base_repo_path)
             registry.register_native("ls", fs_tools.ls, source=ToolSource.CORE)
+            registry.register_native("grep", fs_tools.grep, source=ToolSource.CORE)
             registry.register_native("read_file", fs_tools.read_file, source=ToolSource.CORE)
             registry.register_native("write_file", fs_tools.write_file, source=ToolSource.CORE)
+            registry.register_native("write_file", fs_tools.write_file, source=ToolSource.CORE)
+            registry.register_native("tree", fs_tools.tree, source=ToolSource.CORE)
+            registry.register_native("max_depth", fs_tools.max_depth, source=ToolSource.CORE)
             # Assuming grep_search and others are in fs_tools or registered similarly
+
+            search_tools = SearchTools(self.session_path)
+            registry.register_native("build_all_indexes", search_tools.build_all_indexes , source=ToolSource.CORE)
+            registry.register_native("semantic_search", search_tools.semantic_search , source=ToolSource.CORE)
+            registry.register_native("list_documents", search_tools.list_documents , source=ToolSource.CORE)
             
             # 3. LangChain Community Tools (Priority 3: Heavy Execution)
             try:
@@ -203,7 +215,7 @@ class AutonomousScheduler:
                 openai_api_base=self.model_config["openai_base_url"],
                 http_async_client=http_client,
                 temperature=0,
-                max_tokens=10000,
+                max_tokens=120000,
                 model_kwargs={
                     "response_format": {"type": "json_object"}
                     }

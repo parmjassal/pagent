@@ -20,6 +20,8 @@ dependencies = [
     "langgraph-checkpoint-sqlite",
     "aiosqlite",
     "langchain-community"
+    "langchain-experimental"
+    "python-ripgrep>=0.0.2"
 ]
 
 [tool.ruff]

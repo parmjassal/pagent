@@ -14,6 +14,7 @@ from .runtime.core.workspace import WorkspaceContext
 
 app = typer.Typer()
 console = Console()
+file_console = Console(record=True)
 
 import json
 
@@ -144,6 +145,7 @@ def build_dynamic_tree(session_id: str, user_id: str, model_name: str, task: Opt
         agents_tree.add("[dim]No agents found.[/dim]")
 
     return tree
+
 async def run_platform(
     task: Optional[str],
     user_id: str,
@@ -175,7 +177,7 @@ async def run_platform(
     scheduler_task = asyncio.create_task(scheduler.run_forever())
 
     # 3. Dynamic UI Loop
-    console.print(Panel.fit("[bold blue]pagent[/bold blue] - Multi-Agent Runtime", border_style="blue"))
+    #console.print(Panel.fit("[bold blue]pagent[/bold blue] - Multi-Agent Runtime", border_style="blue"))
     
     with Live(refresh_per_second=2, screen=True) as live:
         try:
@@ -185,6 +187,10 @@ async def run_platform(
                     resolved_session_id, user_id, model_name, task, session_path
                 )
                 live.update(current_tree)
+                with open(f"{session_path}/tree.txt", "w") as f:
+                    file_console.clear()
+                    file_console.print(current_tree)
+                    f.write(file_console.export_text())
                 await asyncio.sleep(0.5)
         except asyncio.CancelledError:
             pass
