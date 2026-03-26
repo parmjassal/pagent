@@ -155,34 +155,39 @@ class SearchTools:
             return f"Search failed for index '{index_name}': {str(e)}"
         
     def list_documents(
-        self, 
-        index_name: str, 
-        state: Optional[AgentState] = None
-    ) -> str:
-        """
-        Lists all unique files currently stored within a specific semantic index.
-        """
-        # 1. Resolve domain path (matches logic in semantic_search)
-        domain_slug = index_name.lower().replace(" ", "_")
-        domain_path = self.index_root / domain_slug
-        
-        if not domain_path.exists():
-            return f"Error: Index '{index_name}' does not exist at {domain_path}."
-        
-        try:
-            # 2. Load the engine for the specific domain
-            engine = SemanticSearchEngine.load(domain_path)
-            files = engine.list_unique_files()
-            
-            if not files:
-                return f"The index '{index_name}' is initialized but contains no documents."
+            self,
+            index_names: List[str],
+            state: Optional[AgentState] = None
+        ) -> str:
+            """
+            Lists all unique files currently stored within passed semantic indexes.
+            """
+            all_files = set()
+            missing_indexes = []
+
+            for index_name in index_names:
+                domain_slug = index_name.lower().replace(" ", "_")
+                domain_path = self.index_root / domain_slug
                 
-            # 3. Format the output for the agent/user
-            header = f"## Files indexed in '{index_name}':"
-            file_list = "\n".join([f"- {f}" for f in files])
+                if not domain_path.exists():
+                    missing_indexes.append(index_name)
+                    continue
+                
+                # Load the engine and update our set with the unique files found
+                engine = SemanticSearchEngine.load(domain_path)
+                # Use .update() for sets (similar to .extend() for lists)
+                all_files.update(engine.list_unique_files())
             
-            return f"{header}\n{file_list}\n\nTotal: {len(files)} files."
+            # Handle cases where no files were found or indexes were missing
+            if not all_files:
+                error_msg = "No documents found."
+                if missing_indexes:
+                    error_msg += f" Missing/unitialized indexes: {', '.join(missing_indexes)}"
+                return error_msg
+
+            # Formatting the output
+            header = f"## Files indexed in: {', '.join(index_names)}"
+            sorted_files = sorted(list(all_files))
+            file_list = "\n".join([f"- {f}" for f in sorted_files])
             
-        except Exception as e:
-            logger.error(f"Failed to list documents for index '{index_name}': {e}")
-            return f"Error accessing index '{index_name}': {str(e)}"
+            return f"{header}\n\n{file_list}\n\nTotal unique files: {len(all_files)}"

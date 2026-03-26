@@ -73,15 +73,14 @@ class OrchestratorAgent:
         self.unit_compiler = unit_compiler
         self.tool_manifest = tool_manifest
         self.result_hook = result_hook
-        import time
-        self.last_request = time.time()
 
     async def planner_node(self, state: AgentState) -> AgentState:
         logger.info(f"Agent {state['agent_id']} entering planner_node.")
-        import time
-        delta = time.time() - self.last_request
-        if delta < 3:
-           await asyncio.sleep(3 - delta)
+
+        await asyncio.sleep(3)
+
+        if "Could not parse response content as the length limit was reached " in state["messages"][-1].content:
+            await asyncio.sleep(15)
 
         pydantic_parser = PydanticOutputParser(pydantic_object=PlanningResult)
         
@@ -104,7 +103,7 @@ class OrchestratorAgent:
             system_instruction = f"""{system_instruction}
 
 ## Available Tools:
-{self.tool_manifest}"""
+{self.tool_manifest}\nTEMP STORAGE PATH( TRANSIEN)T :- {session_path}/temp"""
         
         todo_mgr = TODOManager(state["todo_path"].parent)
         all_tasks = todo_mgr.list_tasks()
@@ -176,8 +175,7 @@ class OrchestratorAgent:
                     payload={"name": action.name, "args": tool_args}
                 ))
                 new_task_ids.append(tid)
-        import time
-        self.last_request = time.time()
+
         message_updates = []
         message_updates.append({"role": "assistant", "content": result.thought_process, "tool_calls":[]})
         message_updates.append({"role": "user", "content": "Lets run tools."})
@@ -251,7 +249,7 @@ class OrchestratorAgent:
                     }
                 }]
             ))
-            
+
         return {"metadata": meta_update, "messages": msg_update }
 
     async def executor_node(self, state: AgentState) -> AgentState:

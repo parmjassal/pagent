@@ -372,3 +372,36 @@ class FilesystemTools:
                 "error": str(e),
                 "error_code": ErrorCode.EXECUTION_ERROR
             }
+        
+    def write_temp_file(self, file_name: str, content: str, state: Optional[AgentState] = None) -> Dict[str, Any]:
+            """
+            Writes content to a file in the 'temp/' directory and returns the full path.
+            
+            NOTE: This is an offload scratch space for current agent processing (e.g., REPL 
+            execution, temporary data storage). It is NOT part of the knowledge workspace 
+            and should be treated as transient.
+            """
+            # Define and ensure the temp directory exists
+            temp_dir = (self.session_path / "temp").resolve()
+            
+            try:
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Use name only to prevent directory traversal within the temp folder
+                safe_name = Path(file_name).name 
+                resolved_path = temp_dir / safe_name
+                
+                resolved_path.write_text(content)
+                
+                return {
+                    "success": True, 
+                    "path": str(resolved_path),
+                    "message": "File written to scratch space."
+                }
+            except Exception as e:
+                code = ErrorCode.PERMISSION_DENIED if isinstance(e, PermissionError) else ErrorCode.EXECUTION_ERROR
+                return {
+                    "success": False, 
+                    "error": f"Failed to write to scratch space: {str(e)}", 
+                    "error_code": code
+                }        

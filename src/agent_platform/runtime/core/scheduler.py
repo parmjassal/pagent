@@ -138,6 +138,7 @@ class AutonomousScheduler:
             registry.register_native("write_file", fs_tools.write_file, source=ToolSource.CORE)
             registry.register_native("tree", fs_tools.tree, source=ToolSource.CORE)
             registry.register_native("max_depth", fs_tools.max_depth, source=ToolSource.CORE)
+            registry.register_native("write_temp_file", fs_tools.write_temp_file, source=ToolSource.CORE)
             # Assuming grep_search and others are in fs_tools or registered similarly
 
             search_tools = SearchTools(self.session_path)
