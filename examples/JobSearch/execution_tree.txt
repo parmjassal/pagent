@@ -1,0 +1,14 @@
+🌳 Session: b87f1b5b
+├── 🔌 Infrastructure
+│   ├── 👤 User: ubuntu
+│   ├── 🧠 Model: glm-5
+│   └── 🎯 Initial Task: Find a list of Principal Engineer or Staff level roles in Dublin, Irel...
+└── 🤖 Agent & Task Tree
+    └── 👑 Root Agent: supervisor
+        ├── 📝 Task: Invoke tavily_search (query: Staff Engineer jobs Dublin Ireland) (completed)
+        ├── 📝 Task: Invoke tavily_search (query: Principal Engineer jobs Dublin Ireland) (completed)
+        ├── 📝 Task: Goal achieved. (completed)
+        ├── 📝 Task: Invoke write_file (file_path: /tmp/jobs.md) (completed)
+        ├── 📝 Task: Invoke tavily_search (query: Principal Engineer jobs Dublin Ireland) (completed)
+        ├── 📝 Task: Invoke update_context (content: ...*'], 'write_scope': ['/tmp/jobs.md']}) (completed)
+        └── 📝 Task: Invoke tavily_search (query: Staff Engineer jobs Dublin Ireland) (completed)
