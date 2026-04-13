@@ -43,10 +43,18 @@ source .vcli/bin/activate
 
 ## 📖 How to Use
 
+### Env Variables
+```bash
+export AGENT_WORKSPACE_ROOT=.pagenttest
+export TAVILY_API_KEY="xyz"
+export OPENAI_API_KEY="xyz"
+```
+
 ### Starting the Platform
 Launch the runtime and provide an optional initial task:
 ```bash
-python -m agent_platform.cli "Analyze the local project for security flaws"
+python -m agent_platform.cli --openai-base-url "xxxx" --model-name "glm-5"  "Find most important 5 system design interview question for Staff Software Engineer role. Check recency of these questions as in 2026.  Provide summary and topi
+c pointers for each question .  Dump into /tmp/StaffSystemInterview.md"
 ```
 
 ### Configuration Options
@@ -82,20 +90,6 @@ If your corporate proxy intercepts requests (e.g., Captive Portals), the platfor
 1.  **Detect** the 3xx redirect.
 2.  **Output** the redirect link to the console for you to authenticate or accept terms.
 3.  **Prevent** silent failures by not following redirects automatically.
-
----
-
-## 🌟 Example Scenario: Secure Task Delegation
-
-Imagine you are building a **Security Audit Platform**.
-
-1.  **Supervisor:** You provide a high-level task: "Audit this repository for SQL injection vulnerabilities."
-2.  **Decomposition:** The Supervisor spawns a `vulnerability_scanner` sub-agent.
-3.  **Prompt Writing:** The `SystemGeneratorAgent` creates a specialized system prompt for the scanner based on the repository's tech stack.
-4.  **Tool Generation:** The scanner realizes it needs a custom parser. It requests a `parse_sql` tool.
-5.  **Validation:** The `SystemValidatorAgent` checks the generated `parse_sql` code. It detects a `shutil.rmtree` call (violation of destructive policy) and rejects it.
-6.  **Secure Execution:** Once a safe tool is generated, it runs in the **Sandbox Runner** (isolated process), ensuring it cannot access sensitive host files.
-7.  **Handover:** The scanner writes its findings to its `outbox`, which the Supervisor picks up via the **Mailbox** to compile the final report.
 
 ---
 
