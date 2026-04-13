@@ -5,14 +5,14 @@
 ## 🚀 Key Features
 
 - **Hierarchical Workspace (`.pagent`):** Automated multi-tenant directory structure for Users and Sessions.
-- **Mailbox Orchestration:** Asynchronous, filesystem-based communication bus for agent isolation.
-- **Selective Sandboxing:** Dual-path execution model. Native for trusted community tools, and process-level sandboxing for dynamically generated code.
+- **Mailbox Orchestration (Only for supervisor to pick task):** Asynchronous, filesystem-based communication bus for agent isolation.
+- **Selective Sandboxing (Pending):** Dual-path execution model. Native for trusted community tools, and process-level sandboxing for dynamically generated code.
 - **Semantic Repo Analysis:** Hybrid Sparse/LSH engine for indexing local folders with chunking support for big files.
 - **Knowledge Management:** Persistent Markdown-based "Fact Sheets" extracted from large context analysis.
 - **Recursive Dynamic Spawning:** Agents can spawn sub-agents up to a configurable depth, with automated handover.
-- **Persistent Human-in-the-Loop:** Asynchronous approval queue for sensitive operations, allowing agents to suspend and resume statefully.
+- **Persistent Human-in-the-Loop (Pending):** Asynchronous approval queue for sensitive operations, allowing agents to suspend and resume statefully.
 - **Rich CLI UI:** Real-time visualization of the orchestration tree and agent "thinking" states.
-- **In-Memory Quota Management:** Strict session-level tracking of agent counts and resource usage.
+- **In-Memory Quota Management (Partial):** Strict session-level tracking of agent counts and resource usage.
 
 ---
 
