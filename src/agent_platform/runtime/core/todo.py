@@ -45,6 +45,12 @@ class TODOManager:
         path.write_text(task.model_dump_json(indent=2))
         logger.info(f"Task added to TODO: {task.task_id} - {task.title}")
         return task.task_id
+    
+    def add_parent_task(self, task: ScopedTask) -> str:
+        path = self.root.parent.parent / "todo" / f"task_{task.task_id}.json"
+        path.write_text(task.model_dump_json(indent=2))
+        logger.info(f"Task added to parent TODO: {task.task_id} - {task.title}")
+        return task.task_id
 
     def list_tasks(self, status: Optional[TaskStatus] = None) -> List[ScopedTask]:
         tasks = []

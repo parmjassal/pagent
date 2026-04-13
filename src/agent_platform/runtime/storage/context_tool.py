@@ -71,8 +71,8 @@ class ContextTools:
 
     def list_knowledge(self, state: AgentState) -> List[str]:
         """
-        Lists all Global Knowledge files available in the session knowledge directory.
-        Returns the file names so agents can decide which knowledge artifact to fetch.
+        Lists all Global Knowledge artifact available in the session knowledge store.
+        Returns the artifact names so agents can decide which knowledge artifact to fetch.
         """
         if not self.knowledge_path or not self.knowledge_path.exists():
             return []
@@ -81,6 +81,9 @@ class ContextTools:
 
 
     def fetch_knowledge(self, state: AgentState, name: str) -> Optional[str]:
+        """
+        Fetch a given knowledge artifact from session knowledge store.
+        """
         if not self.knowledge_path:
             return None
 

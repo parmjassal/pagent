@@ -5,7 +5,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from ..orch.state import AgentState
 from ..core.workspace import WorkspaceContext
 from ..core.context_store import ContextStore
-from ..core.http_client import get_platform_http_client
+from ..core.http_client import get_platform_async_http_client
 
 import logging
 logger = logging.getLogger(__name__)
@@ -35,12 +35,12 @@ class SystemGeneratorAgent:
         if llm:
             self.llm = llm
         else:
-            http_client = get_platform_http_client()
+            #http_client = get_platform_http_client()
             self.llm = ChatOpenAI(
                 model=model_name,
                 openai_api_key=api_key,
                 openai_api_base=base_url,
-                http_client=http_client,
+                http_async_client=get_platform_async_http_client(),
                 temperature=0.7 # Higher temperature for creative generation
             )
 

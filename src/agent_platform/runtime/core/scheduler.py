@@ -135,7 +135,6 @@ class AutonomousScheduler:
             registry.register_native("grep", fs_tools.grep, source=ToolSource.CORE)
             registry.register_native("read_file", fs_tools.read_file, source=ToolSource.CORE)
             registry.register_native("write_file", fs_tools.write_file, source=ToolSource.CORE)
-            registry.register_native("write_file", fs_tools.write_file, source=ToolSource.CORE)
             registry.register_native("tree", fs_tools.tree, source=ToolSource.CORE)
             registry.register_native("max_depth", fs_tools.max_depth, source=ToolSource.CORE)
             registry.register_native("write_temp_file", fs_tools.write_temp_file, source=ToolSource.CORE)
@@ -144,7 +143,7 @@ class AutonomousScheduler:
             search_tools = SearchTools(self.session_path)
             registry.register_native("build_all_indexes", search_tools.build_all_indexes , source=ToolSource.CORE)
             registry.register_native("semantic_search", search_tools.semantic_search , source=ToolSource.CORE)
-            registry.register_native("list_documents", search_tools.list_documents , source=ToolSource.CORE)
+            registry.register_native("dump_documents", search_tools.dump_documents , source=ToolSource.CORE)
             
             # 3. LangChain Community Tools (Priority 3: Heavy Execution)
             try:
@@ -169,10 +168,33 @@ class AutonomousScheduler:
                 
                 # python_repl - Note: requires langchain_experimental or specific community package
                 try:
-                    from langchain_experimental.tools import PythonREPLTool
-                    registry.register_langchain_tool(PythonREPLTool())
+                    repl_globals = dict(globals())  # safer than raw globals()
+
+                    # Inject your helper functions
+                    repl_globals.update({
+                        "list_knowledge": context_tools.list_knowledge,
+                        "fetch_knowledge": context_tools.fetch_knowledge,
+                        "build_all_indexes": search_tools.build_all_indexes,
+                        "dump_documents": search_tools.dump_documents,
+                        "add_task": todo_tool.add_task,
+                    })
+                    
+                    from langchain_experimental.tools.python.tool import PythonAstREPLTool
+                    # Create a clear description so the LLM knows what's inside the "black box"
+                    repl_description = (
+                        "A Python shell. Use this to execute python commands. "
+                        "The following helper functions are pre-imported and available: "
+                        "- list_knowledge(): Returns a list of available knowledge artifacts.\n"
+                        "- fetch_knowledge(artifact_id): Retrieves content for a specific knowledge artifact_id.\n"
+                        "- build_all_indexes(repo_path, index_to_keywords: Dict[str, List[str]], negative_globs: Optional[List[str]): Rebuilds search indexes for the session.\n"
+                        "- dump_documents(index_names: List[str]): Dump all documents for given indexes in the file and return path.\n"
+                        "   Example: path = dump_documents(['source_code']); print(open(path).read())\n"
+                        "- add_task(title, description): Add agentic task to current todo list.\n"
+                    )
+                    python_repl = PythonAstREPLTool(locals=repl_globals, globals=repl_globals, description=repl_description)
+                    registry.register_langchain_tool(python_repl)
                 except ImportError:
-                    logger.warning("langchain_experimental not found, skipping PythonREPLTool")
+                    logger.warning("langchain_experimental not found, skipping PythonAstREPLTool")
 
             except ImportError as e:
                 logger.warning(f"Failed to load some community tools: {e}")
@@ -219,11 +241,8 @@ class AutonomousScheduler:
                 model=self.model_config["model_name"],
                 openai_api_base=self.model_config["openai_base_url"],
                 http_async_client=http_client,
-                temperature=0,
-                max_tokens=120000,
-                model_kwargs={
-                    "response_format": {"type": "json_object"}
-                    }
+                temperature=0.3,
+                max_tokens=20000,
             )
 
             # Initialize Unified Orchestrator (v3.0)

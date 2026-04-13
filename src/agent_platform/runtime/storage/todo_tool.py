@@ -1,5 +1,5 @@
 from typing import List, Dict, Any, Optional
-from ..core.todo import TODOManager, ScopedTask, TaskStatus
+from ..core.todo import TODOManager, ScopedTask, TaskStatus, TaskType
 from pathlib import Path
 from ..orch.state import AgentState
 
@@ -21,10 +21,23 @@ class TODOTool:
             title=title, 
             description=description, 
             type=TaskType(type),
-            assigned_to=assigned_to,
+            assigned_to=(assigned_to or title).replace(" ", "_"),
             payload=payload or {}
         )
         return self.mgr.add_task(task)
+    
+    def add_parent_task(self, title: str, description: str, type: str = "agent", assigned_to: Optional[str] = None, state: Optional[AgentState] = None) -> str:
+        """
+        Adds new agentic task to the parent's TODO list.
+        """
+        task = ScopedTask(
+            title=title, 
+            description=description, 
+            type=TaskType(type),
+            assigned_to=assigned_to,
+            payload={}
+        )
+        return self.mgr.add_parent_task(task)
 
     def list_tasks(self, status: Optional[str] = None, state: Optional[AgentState] = None) -> List[Dict[str, Any]]:
         """Lists tasks, optionally filtered by status."""

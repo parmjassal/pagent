@@ -33,14 +33,15 @@ class UnitCompiler:
         
         # Initialize LLM for the unit
         from langchain_openai import ChatOpenAI
-        from ..core.http_client import get_platform_http_client
+        from ..core.http_client import get_platform_async_http_client
         
-        http_client = get_platform_http_client()
+        http_client = get_platform_async_http_client()
         llm = ChatOpenAI(
             model=self.model_config.get("model_name", "gpt-4o"),
             openai_api_base=self.model_config.get("openai_base_url"),
-            http_client=http_client,
-            temperature=0
+            http_async_client=http_client,
+            temperature=0.2,
+            max_tokens=20000
         )
 
         # In Unified Model v3.0, both Supervisor and Worker use OrchestratorAgent.

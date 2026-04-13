@@ -7,6 +7,7 @@ from ..orch.state import AgentState
 from ..core.workspace import WorkspaceContext
 from ..orch.models import ValidationResult
 from ..core.parser import robust_json_parser
+from ..core.http_client import get_platform_async_http_client
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ class SystemValidatorAgent:
         else:
             self.base_llm = ChatOpenAI(
                 model=model_name,
+                http_async_client=get_platform_async_http_client(),
                 openai_api_key=api_key,
                 openai_api_base=base_url,
                 temperature=0

@@ -1,6 +1,7 @@
 import os
 import fnmatch
 import logging
+import random
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 
@@ -154,40 +155,57 @@ class SearchTools:
             logger.error(f"Search failed for index '{index_name}': {e}")
             return f"Search failed for index '{index_name}': {str(e)}"
         
-    def list_documents(
-            self,
-            index_names: List[str],
-            state: Optional[AgentState] = None
-        ) -> str:
-            """
-            Lists all unique files currently stored within passed semantic indexes.
-            """
-            all_files = set()
-            missing_indexes = []
 
-            for index_name in index_names:
-                domain_slug = index_name.lower().replace(" ", "_")
-                domain_path = self.index_root / domain_slug
-                
-                if not domain_path.exists():
-                    missing_indexes.append(index_name)
-                    continue
-                
-                # Load the engine and update our set with the unique files found
-                engine = SemanticSearchEngine.load(domain_path)
-                # Use .update() for sets (similar to .extend() for lists)
-                all_files.update(engine.list_unique_files())
-            
-            # Handle cases where no files were found or indexes were missing
-            if not all_files:
-                error_msg = "No documents found."
-                if missing_indexes:
-                    error_msg += f" Missing/unitialized indexes: {', '.join(missing_indexes)}"
-                return error_msg
 
-            # Formatting the output
-            header = f"## Files indexed in: {', '.join(index_names)}"
-            sorted_files = sorted(list(all_files))
-            file_list = "\n".join([f"- {f}" for f in sorted_files])
+    def dump_documents(
+        self, 
+        index_names: List[str], 
+        state: Optional[AgentState] = None
+    ) -> str:
+        """
+        Dumps all unique files currently stored within passed semantic indexes to a temp file.
+        Returns the absolute path to the generated file.
+        """
+        all_files = set()
+        missing_indexes = []
+
+        for index_name in index_names:
+            domain_slug = index_name.lower().replace(" ", "_")
+            domain_path = self.index_root / domain_slug
             
-            return f"{header}\n\n{file_list}\n\nTotal unique files: {len(all_files)}"
+            if not domain_path.exists():
+                missing_indexes.append(index_name)
+                continue
+            
+            # Load the engine and update our set with the unique files found
+            engine = SemanticSearchEngine.load(domain_path)
+            all_files.update(engine.list_unique_files())
+        
+        # Handle cases where no files were found
+        if not all_files:
+            error_msg = "No documents found."
+            if missing_indexes:
+                error_msg += f" Missing/uninitialized indexes: {', '.join(missing_indexes)}"
+            return error_msg
+
+        # 1. Format the content
+        header = f"## Files indexed in: {', '.join(index_names)}"
+        sorted_files = sorted(list(all_files))
+        file_list = "\n".join([f"- {f}" for f in sorted_files])
+        final_content = f"{header}\n\n{file_list}\n\nTotal unique files: {len(all_files)}"
+
+        # 2. Setup the directory and path
+        # Using Path objects for cleaner cross-platform handling
+        temp_dir = Path(self.session_path) / "temp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate a unique filename
+        random_id = random.randint(10, 99999)
+        file_path = temp_dir / f"unique_files_{random_id}.txt"
+
+        # 3. Write the content to the file
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(final_content)
+
+        # 4. Return the absolute path
+        return str(file_path.absolute())

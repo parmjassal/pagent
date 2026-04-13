@@ -27,7 +27,7 @@ class AgentToolNode:
 
         tool_name = tool_call.get("name")
         tool_args = tool_call.get("args", {})
-        
+
         # Resolve ID from the original LLM call
         tool_call_id = tool_call.get("id")
         

@@ -38,6 +38,9 @@ def get_platform_async_http_client() -> httpx.AsyncClient:
     if _async_client is None or _async_client.is_closed:
         logger.info("Creating new shared httpx.AsyncClient.")
         _async_client = httpx.AsyncClient(
+            headers={
+                "X-Title": "relay"
+            },
             event_hooks={'response': [on_response_hook]}
         )
     return _async_client
@@ -56,6 +59,7 @@ def get_platform_http_client() -> httpx.Client:
     Returns a synchronous httpx Client configured for the platform.
     """
     return httpx.Client(
+        headers={"X-Title": "relay"},
         follow_redirects=False,
         event_hooks={'response': [on_response_hook]}
     )
