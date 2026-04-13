@@ -15,7 +15,11 @@
 - **In-Memory Quota Management (Partial):** Strict session-level tracking of agent counts and resource usage.
 
 ---
+## Examples
 
+Take a look at examples [here](https://github.com/parmjassal/pagent/tree/main/examples)
+
+---
 ## 🛠 Prerequisites
 
 - **Python 3.11+**
